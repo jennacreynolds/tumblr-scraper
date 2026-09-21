@@ -4,16 +4,13 @@
 from __future__ import annotations
 
 import argparse
-import functools
 import subprocess
 import sys
-import threading
 import webbrowser
-from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote, urlsplit
 
 import main
+from bridge import LocalControlBridge, LocalControlRequestHandler
 
 
 ROOT = Path(__file__).resolve().parent
@@ -31,26 +28,6 @@ def prompt_username() -> str:
             return main.canonical_username(value)
         except argparse.ArgumentTypeError as exc:
             print(f"Please enter a valid Tumblr blog name: {exc}.")
-
-
-def prompt_action() -> str:
-    archive_index = main.BACKUPS_DIR / "index.html"
-    print(
-        "Choose an action:\n\n"
-        "1. Open existing archive\n"
-        "2. Run a new crawl\n"
-    )
-    while True:
-        value = input("Choice [1]:\n> ").strip() or "1"
-        if value == "1":
-            if archive_index.is_file():
-                return "open"
-            print(f"No generated archive found at {archive_index}.")
-            print("Choose 2 to run a crawl first.")
-            continue
-        if value == "2":
-            return "crawl"
-        print("Please choose 1 or 2.")
 
 
 def prompt_max_posts() -> int:
@@ -188,46 +165,32 @@ def install_local_dependencies() -> bool:
     return True
 
 
-class ArchiveRequestHandler(SimpleHTTPRequestHandler):
-    def __init__(self, *args, archive_prefix: str, archive_root: Path, **kwargs):
-        self.archive_prefix = archive_prefix.rstrip("/")
-        self.archive_root = archive_root.resolve()
-        super().__init__(*args, **kwargs)
+# Compatibility name for callers that only used the old server's quiet logger.
+ArchiveRequestHandler = LocalControlRequestHandler
 
-    def translate_path(self, path: str) -> str:
-        request_path = unquote(urlsplit(path).path)
-        if request_path == "/global.css":
-            return str(ROOT / "global.css")
-        if (request_path == self.archive_prefix or request_path.startswith(self.archive_prefix + "/")
-                or request_path == "/Neighborhoods" or request_path.startswith("/Neighborhoods/")):
-            translated = Path(super().translate_path(path)).resolve()
-            allowed = [self.archive_root, (ROOT / "Neighborhoods").resolve()]
-            if any(translated == root or root in translated.parents for root in allowed):
-                return str(translated)
-        return str(ROOT / "__tumblr_scraper_not_found__")
 
-    def log_message(self, _format: str, *_args: object) -> None:
-        # Routine localhost requests are normal browser activity, not crawler output.
-        return
-
-    def log_error(self, format: str, *args: object) -> None:
-        print(f"Archive server error: {format % args}", file=sys.stderr)
+def create_live_bridge(application: main.CrawlerApplication, archive: Path | None = None) -> LocalControlBridge:
+    archive = archive or main.BACKUPS_DIR
+    archive_root = archive.resolve()
+    archive_prefix = archive_root.relative_to(ROOT).as_posix()
+    return LocalControlBridge(
+        base_dir=ROOT,
+        archive_root=archive_root,
+        neighborhood_root=main.NEIGHBORHOODS_DIR,
+        global_css=main.GLOBAL_CSS,
+        status_provider=application.snapshot,
+        control_handler=lambda name, value: main.apply_runtime_control(name, value, source="browser"),
+        start_handler=application.start,
+        stop_handler=application.stop,
+        prepare_entrypoint=main.prepare_live_archive_entrypoint,
+        archive_url_prefix=archive_prefix,
+    )
 
 
 def open_archive(archive: Path) -> None:
-    archive_root = archive.resolve()
-    archive_prefix = "/" + archive_root.relative_to(ROOT).as_posix()
-    handler = functools.partial(
-        ArchiveRequestHandler,
-        directory=str(ROOT),
-        archive_prefix=archive_prefix,
-        archive_root=archive_root,
-    )
-    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    url = f"http://127.0.0.1:{server.server_port}{archive_prefix}/index.html"
-
+    application = main.CrawlerApplication()
+    bridge = create_live_bridge(application, archive)
+    url = bridge.start()
     try:
         opened = webbrowser.open(url, new=2)
         if not opened:
@@ -242,8 +205,7 @@ def open_archive(archive: Path) -> None:
         except EOFError:
             pass
     finally:
-        server.shutdown()
-        server.server_close()
+        bridge.close()
 
 
 def open_static_archive(archive: Path) -> None:
@@ -271,7 +233,7 @@ def run_scraper(
     context_depth: int | None = None,
     focus: str | None = None,
 ) -> int:
-    command = [sys.executable, str(MAIN), username, str(max_posts), "--profile", profile_id]
+    command = [sys.executable, str(MAIN), username, str(max_posts), "--compact-terminal", "--profile", profile_id]
     if full_res:
         command.append("--full-res")
     if context_mode != "none":
@@ -295,32 +257,122 @@ def run_scraper(
     return 0
 
 
-def main_entry() -> int:
-    print("TUMBLR SCRAPER\n")
-    action = prompt_action()
-    if action == "open":
-        print("Opening local archive...")
-        open_static_archive(main.BACKUPS_DIR)
-        return 0
+def run_live_scraper(
+    username: str,
+    max_posts: int,
+    full_res: bool,
+    profile_id: str,
+    context_mode: str = "none",
+    context_depth: int | None = None,
+    focus: str | None = None,
+) -> int:
+    application = main.CrawlerApplication()
+    request = main.build_crawl_request(
+        username,
+        max_posts=max_posts,
+        context=context_mode,
+        context_depth=context_depth,
+        focus=focus,
+        profile_id=profile_id,
+        full_res=full_res,
+    )
+    return run_browser_first(application, initial_request=request)
 
+
+def terminal_request() -> main.CrawlRequest:
     username = prompt_username()
     max_posts = prompt_max_posts()
-    try:
-        profile_id = prompt_network_profile()
-    except main.PolicyError as exc:
-        print(f"Network policy could not be loaded: {exc}")
-        return 1
+    profile_id = prompt_network_profile()
     full_res = prompt_full_res()
     context_mode, context_depth = prompt_context()
+    focus = prompt_focus()
+    return main.build_crawl_request(
+        username,
+        max_posts=max_posts,
+        context=context_mode,
+        context_depth=context_depth,
+        focus=focus,
+        profile_id=profile_id,
+        full_res=full_res,
+    )
+
+
+def run_browser_first(
+    application: main.CrawlerApplication,
+    *,
+    initial_request: main.CrawlRequest | None = None,
+) -> int:
+    main.set_host_capabilities(compact_terminal=True, keyboard_controls=False)
     try:
-        focus = prompt_focus()
-    except main.PolicyError as exc:
-        print(f"Context policy could not be loaded: {exc}")
-        return 1
-    print(f"\nChecking Tumblr...\nBacking up {username}...")
+        bridge = create_live_bridge(application)
+        url = bridge.start()
+    except OSError as exc:
+        print(f"Live archive controls are unavailable ({exc}); use terminal fallback.")
+        if initial_request is not None:
+            return run_scraper(
+                initial_request.target,
+                initial_request.max_posts,
+                initial_request.full_res,
+                str(initial_request.profile_id),
+                initial_request.context,
+                initial_request.context_depth,
+                initial_request.focus,
+            )
+        request = terminal_request()
+        application.start_request(request)
+        application.worker.join()
+        return 0 if application.state == "complete" else 1
+    try:
+        opened = webbrowser.open(url, new=2)
+        print(
+            "Tumblr-Scraper is ready.\n\n"
+            f"Browser:\n{url}\n\n"
+            "Use the browser to start/control a crawl.\n"
+            "Terminal fallback: type T.\n"
+            "Ctrl+C: stop safely"
+        )
+        if not opened:
+            try:
+                import androidhelper
+                androidhelper.Android().startActivity("android.intent.action.VIEW", url)
+            except Exception:
+                print("Open the Browser address above manually.")
+        if initial_request is not None:
+            application.start_request(initial_request)
+        try:
+            while True:
+                try:
+                    command = input().strip().lower()
+                except EOFError:
+                    break
+                if command == "t":
+                    if application.state in {"starting", "running", "stopping", "finalizing"}:
+                        print("A crawl is already active; use the browser or Ctrl+C.")
+                        continue
+                    try:
+                        request = terminal_request()
+                        application.start_request(request)
+                        print("Terminal crawl started; browser controls remain available.")
+                    except (argparse.ArgumentTypeError, main.PolicyError) as exc:
+                        print(f"Terminal fallback could not start: {exc}")
+                elif command in {"q", "quit", "exit"}:
+                    break
+        except KeyboardInterrupt:
+            if application.state in {"starting", "running"} and main.ACTIVE_RUNTIME is not None:
+                application.stop()
+                if application.worker is not None:
+                    application.worker.join()
+            return 130
+        return 0 if application.state in {"idle", "complete"} else 1
+    finally:
+        bridge.close()
+
+
+def main_entry() -> int:
+    print("TUMBLR SCRAPER\n")
     if not install_local_dependencies():
         return 1
-    return run_scraper(username, max_posts, full_res, profile_id, context_mode, context_depth, focus)
+    return run_browser_first(main.CrawlerApplication())
 
 
 if __name__ == "__main__":

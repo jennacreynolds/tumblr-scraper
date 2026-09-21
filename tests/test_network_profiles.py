@@ -158,7 +158,7 @@ class NetworkPolicyTests(unittest.TestCase):
 
 
 class PresentationTests(unittest.TestCase):
-    def test_flat_reblog_trail_preserves_order_and_real_quotes(self) -> None:
+    def test_flat_reblog_trail_reads_utterances_chronologically(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             old_backups = main.BACKUPS_DIR
             main.BACKUPS_DIR = Path(directory) / "Backups"
@@ -170,7 +170,7 @@ class PresentationTests(unittest.TestCase):
                 )
                 rendered = main._render_flat_reblog_trail(body, main.BACKUPS_DIR / "dashboard.html")
                 self.assertEqual(rendered.count("reblog-trail-entry"), 2)
-                self.assertLess(rendered.index(">a</bdi>"), rendered.index(">b</bdi>"))
+                self.assertLess(rendered.index(">b</bdi>"), rendered.index(">a</bdi>"))
                 self.assertIn("A content", rendered)
                 self.assertIn("B content", rendered)
                 self.assertIn("<blockquote><p>an actual quote</p></blockquote>", rendered)
@@ -633,7 +633,9 @@ class ContextTests(unittest.TestCase):
         status.saved_by_lane.update({"target": 18, "depth1": 19, "depth2": 7})
         status.budget_used = 44
         status.current_action = "Scouting blog-a"
-        with mock.patch.dict(main.os.environ, {"ANDROID_ARGUMENT": "pydroid"}, clear=False):
+        old_capabilities = dict(main.HOST_CAPABILITIES)
+        main.set_host_capabilities(compact_terminal=True, keyboard_controls=False)
+        try:
             renderer = main.ProgressRenderer(status, stream=stream)
             controller = main.RuntimeKeyController(main.RuntimeControls(0.5, 100), status, stream=stream)
             renderer.render(force=True)
@@ -643,8 +645,11 @@ class ContextTests(unittest.TestCase):
             status.warning("blog-a temporarily unavailable")
             renderer.render(force=True)
             renderer.finish()
+        finally:
+            main.HOST_CAPABILITIES.clear()
+            main.HOST_CAPABILITIES.update(old_capabilities)
         output = stream.getvalue()
-        self.assertTrue(renderer.android_compact)
+        self.assertTrue(renderer.compact_terminal)
         self.assertFalse(controller.enabled)
         self.assertIn("\r", output)
         self.assertNotIn("\033[", output)
@@ -713,7 +718,7 @@ class ContextTests(unittest.TestCase):
                 catalog = json.loads((main.BACKUPS_DIR / "catalog.json").read_text(encoding="utf-8"))
                 self.assertEqual([item["blog"] for item in catalog["blogs"]], ["one", "two"])
                 dashboard = (main.BACKUPS_DIR / "dashboard.html").read_text(encoding="utf-8")
-                self.assertLess(dashboard.index("one"), dashboard.index("two"))
+                self.assertLess(dashboard.index('id="post-one-1-card"'), dashboard.index('id="post-two-1-card"'))
             finally:
                 main.BACKUPS_DIR = old
 
@@ -795,6 +800,8 @@ class ContextTests(unittest.TestCase):
                     text = page.read_text(encoding="utf-8")
                     self.assertIn("class=\"archive-nav\"", text)
                     self.assertIn("class=\"archive-chrome\"", text)
+                    self.assertIn('id="crawler-controls"', text)
+                    self.assertIn("Start crawl", text)
                     self.assertIn("class=\"reader-settings\"", text)
                     self.assertEqual(text.count('class="reader-setting"'), 3)
                     self.assertIn('type="range"', text)
@@ -809,9 +816,9 @@ class ContextTests(unittest.TestCase):
                             self.assertTrue(target.is_file(), (page, ref, target))
 
                 archive_js = (main.BACKUPS_DIR / "assets" / "archive.js").read_text(encoding="utf-8")
-                self.assertNotRegex(archive_js, r"\b(?:fetch|XMLHttpRequest)\b")
-                self.assertNotIn("localhost", archive_js)
-                self.assertNotIn("127.0.0.1", archive_js)
+                self.assertNotRegex(archive_js, r"\b(?:XMLHttpRequest)\b")
+                self.assertIn("__crawler/bootstrap", archive_js)
+                self.assertIn("location.hostname", archive_js)
 
                 post = (main.BACKUPS_DIR / "target" / "posts" / "1.html").read_text(encoding="utf-8")
                 self.assertIn("../tags/", post)
@@ -1001,6 +1008,92 @@ class TerminalOutputTests(unittest.TestCase):
         with contextlib.redirect_stdout(stream):
             module.ArchiveRequestHandler.log_message(None, "%s", "GET /index.html")
         self.assertEqual(stream.getvalue(), "")
+
+
+class LiveControlTests(unittest.TestCase):
+    def test_browser_and_terminal_requests_build_the_same_configuration(self) -> None:
+        browser = main.build_crawl_request(
+            "Example",
+            max_posts=300,
+            context="explore",
+            context_depth=2,
+            focus="balanced",
+            profile_id="gentle",
+            full_res=False,
+        )
+        terminal = main.build_crawl_request(
+            "example",
+            max_posts=300,
+            context="explore",
+            context_depth=2,
+            focus="balanced",
+            profile_id="gentle",
+            full_res=False,
+        )
+        self.assertEqual(browser, terminal)
+        self.assertEqual(browser.argv(), terminal.argv())
+
+    def test_application_starts_idle_and_rejects_duplicate_active_crawls(self) -> None:
+        import threading
+
+        started = threading.Event()
+        release = threading.Event()
+        old_main = main.main
+
+        def fake_main(_argv: list[str], *, install_signal_handlers: bool = True) -> int:
+            self.assertFalse(install_signal_handlers)
+            started.set()
+            release.wait(timeout=2)
+            return 0
+
+        try:
+            main.main = fake_main
+            application = main.CrawlerApplication()
+            self.assertEqual(application.snapshot()["lifecycle"], "idle")
+            application.start({"target": "example", "profile_id": "gentle"})
+            self.assertTrue(started.wait(timeout=2))
+            with self.assertRaises(main.PolicyError):
+                application.start({"target": "example", "profile_id": "gentle"})
+            release.set()
+            assert application.worker is not None
+            application.worker.join(timeout=2)
+            self.assertEqual(application.snapshot()["lifecycle"], "complete")
+        finally:
+            release.set()
+            main.main = old_main
+
+    def test_browser_controls_reuse_runtime_and_record_source(self) -> None:
+        old_runtime, old_status = main.ACTIVE_RUNTIME, main.ACTIVE_STATUS
+        try:
+            status = main.CrawlerStatus("example", budget_limit=100)
+            runtime = main.RuntimeControls(0.5, 100)
+            status.runtime = runtime
+            main.ACTIVE_RUNTIME, main.ACTIVE_STATUS = runtime, status
+            snapshot = main.apply_runtime_control("focus", "neighbors", source="browser")
+            self.assertEqual(runtime, status.runtime)
+            self.assertEqual(runtime.focus_bias, 1.2)
+            self.assertEqual(snapshot["focus"], "neighbors")
+            self.assertEqual(runtime.changes[-1]["source"], "browser")
+            main.apply_runtime_control("cancel_requested", True, source="browser")
+            self.assertTrue(runtime.cancel_requested)
+        finally:
+            main.ACTIVE_RUNTIME, main.ACTIVE_STATUS = old_runtime, old_status
+
+    def test_invalid_browser_control_does_not_mutate_runtime(self) -> None:
+        old_runtime, old_status = main.ACTIVE_RUNTIME, main.ACTIVE_STATUS
+        try:
+            status = main.CrawlerStatus("example", budget_limit=100)
+            runtime = main.RuntimeControls(0.5, 100)
+            status.runtime = runtime
+            main.ACTIVE_RUNTIME, main.ACTIVE_STATUS = runtime, status
+            with self.assertRaises(main.PolicyError):
+                main.apply_runtime_control("focus", "invalid", source="browser")
+            with self.assertRaises(main.PolicyError):
+                main.apply_runtime_control("budget_limit", -1, source="browser")
+            self.assertEqual(runtime.focus_bias, 0.5)
+            self.assertEqual(runtime.changes, [])
+        finally:
+            main.ACTIVE_RUNTIME, main.ACTIVE_STATUS = old_runtime, old_status
 
 
 class FailureRecoveryTests(unittest.TestCase):

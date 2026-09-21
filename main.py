@@ -28,6 +28,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unicodedata
 import uuid
@@ -39,6 +40,7 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, unquote, urlencode, urljoin, urlparse, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
+
 
 try:
     import select
@@ -71,7 +73,12 @@ PROCESS_BATCH = 25
 FULL_RES = False
 NETWORK_PROFILE: dict[str, Any] = {}
 ACTIVE_RUNTIME: RuntimeControls | None = None
+ACTIVE_STATUS: CrawlerStatus | None = None
+ACTIVE_LIFECYCLE = "stopped"
 ACTIVE_PROGRESS_RENDERER: Any = None
+ACTIVE_PRESENTATION_GENERATION = 0
+RUNTIME_LOCK = threading.RLock()
+HOST_CAPABILITIES = {"compact_terminal": False, "keyboard_controls": True}
 VERBOSE = False
 USER_AGENT = "PuppetBackup/1.1 (+personal archival copy)"
 FOCUS_LABELS = {"deep": "Deep", "balanced": "Balanced", "wide": "Wide", "neighbors": "Neighbors"}
@@ -85,15 +92,12 @@ MAX_POLICY_DELAY_SECONDS = 300
 MAX_POLICY_WORKERS = 8
 
 
-def is_android_runtime() -> bool:
-    markers = (
-        os.environ.get("ANDROID_ARGUMENT", ""),
-        os.environ.get("ANDROID_ROOT", ""),
-        os.environ.get("ANDROID_DATA", ""),
-        sys.executable,
-        sys.prefix,
-    )
-    return sys.platform == "android" or any("pydroid" in value.lower() for value in markers if value)
+def set_host_capabilities(*, compact_terminal: bool, keyboard_controls: bool) -> None:
+    """Set optional host presentation/input capabilities without platform imports."""
+    HOST_CAPABILITIES.update({
+        "compact_terminal": bool(compact_terminal),
+        "keyboard_controls": bool(keyboard_controls),
+    })
 
 
 @dataclass
@@ -235,6 +239,135 @@ class RuntimeControls:
         })
 
 
+@dataclass(frozen=True)
+class CrawlRequest:
+    """Validated, transport-neutral request for one canonical crawl."""
+
+    target: str
+    max_posts: int = 300
+    context: str = "explore"
+    context_depth: int | None = 2
+    focus: str | None = None
+    profile_id: str | None = None
+    full_res: bool = False
+
+    def argv(self) -> list[str]:
+        args = [self.target, str(self.max_posts), "--profile", str(self.profile_id)]
+        if self.full_res:
+            args.append("--full-res")
+        args.extend(["--context", self.context])
+        if self.context_depth is not None:
+            args.extend(["--context-depth", str(self.context_depth)])
+        if self.focus is not None:
+            args.extend(["--focus", self.focus])
+        return args
+
+
+def build_crawl_request(
+    target: str,
+    *,
+    max_posts: int = 300,
+    context: str = "explore",
+    context_depth: int | None = 2,
+    focus: str | None = None,
+    profile_id: str | None = None,
+    full_res: bool = False,
+) -> CrawlRequest:
+    """Build the one validated configuration used by every entry point."""
+    canonical_target = canonical_username(str(target).strip())
+    if isinstance(max_posts, bool) or not isinstance(max_posts, int) or max_posts < 0:
+        raise PolicyError("max_posts must be a non-negative integer")
+    if context not in {"none", "nearby", "explore"}:
+        raise PolicyError("context must be none, nearby, or explore")
+    if context_depth is not None and (isinstance(context_depth, bool) or not isinstance(context_depth, int) or context_depth < 0):
+        raise PolicyError("context_depth must be a non-negative integer")
+    if context == "explore" and context_depth is not None and context_depth < 1:
+        raise PolicyError("context_depth must be at least 1 for explore")
+    policy = load_network_policy()
+    selected_profile = resolve_network_profile(policy, profile_id)
+    context_policy = load_context_policy()
+    context_config(context_policy, context, context_depth, focus)
+    if not isinstance(full_res, bool):
+        raise PolicyError("full_res must be boolean")
+    return CrawlRequest(
+        target=canonical_target,
+        max_posts=max_posts,
+        context=context,
+        context_depth=context_depth,
+        focus=focus,
+        profile_id=str(selected_profile["id"]),
+        full_res=full_res,
+    )
+
+
+def _set_lifecycle(value: str) -> None:
+    global ACTIVE_LIFECYCLE
+    with RUNTIME_LOCK:
+        ACTIVE_LIFECYCLE = value
+
+
+def _validate_runtime_control(name: str, value: Any) -> Any:
+    if name == "focus":
+        if value not in {"deep", "balanced", "wide", "neighbors"}:
+            raise PolicyError("focus must be deep, balanced, wide, or neighbors")
+        return value
+    if name == "budget_limit":
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise PolicyError("budget_limit must be a non-negative integer")
+        return value
+    if name in {"context_multiplier", "relationship_multiplier"}:
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+            raise PolicyError(f"{name} must be a finite number")
+        if value < 0 or value > 4:
+            raise PolicyError(f"{name} must be between 0 and 4")
+        return float(value)
+    if name == "network_profile_id":
+        profile = resolve_network_profile(load_network_policy(), str(value))
+        return str(profile["id"])
+    if name == "cancel_requested":
+        if value is not True:
+            raise PolicyError("cancel_requested can only be set to true")
+        return True
+    raise PolicyError(f"unsupported runtime control: {name}")
+
+
+def apply_runtime_control(
+    name: str,
+    value: Any,
+    *,
+    source: str,
+    runtime: RuntimeControls | None = None,
+    status: "CrawlerStatus | None" = None,
+) -> dict[str, Any]:
+    """Validate and apply one control through the canonical runtime model."""
+    runtime = runtime or ACTIVE_RUNTIME
+    status = status or ACTIVE_STATUS
+    if runtime is None or status is None:
+        raise PolicyError("no crawler is currently running")
+    with RUNTIME_LOCK:
+        normalized = _validate_runtime_control(name, value)
+        if name == "focus":
+            bias = {"deep": 0.0, "balanced": 0.5, "wide": 1.0, "neighbors": 1.2}[normalized]
+            runtime.update("focus_bias", bias, source)
+            status.focus = normalized
+        elif name == "budget_limit":
+            normalized = max(normalized, status.budget_used)
+            runtime.update("budget_limit", normalized, source)
+            status.budget_limit = normalized
+        elif name in {"context_multiplier", "relationship_multiplier"}:
+            runtime.update(name, normalized, source)
+        elif name == "network_profile_id":
+            profile = resolve_network_profile(load_network_policy(), normalized)
+            global NETWORK_PROFILE
+            NETWORK_PROFILE = dict(profile)
+            runtime.update(name, normalized, source)
+            status.network = str(profile.get("label", normalized))
+        elif name == "cancel_requested":
+            runtime.cancel_count += 1
+            runtime.update(name, True, source)
+        return status_snapshot(status)
+
+
 class RuntimeKeyController:
     """Best-effort, action-boundary controls with a non-interactive fallback."""
 
@@ -242,7 +375,7 @@ class RuntimeKeyController:
         self.runtime = runtime
         self.status = status
         self.stream = stream or sys.stdin
-        self.enabled = bool(getattr(self.stream, "isatty", lambda: False)()) and not is_android_runtime()
+        self.enabled = bool(getattr(self.stream, "isatty", lambda: False)()) and HOST_CAPABILITIES["keyboard_controls"]
 
     def _read_posix(self) -> list[str]:
         if not self.enabled or select is None or termios is None or tty is None:
@@ -283,50 +416,39 @@ class RuntimeKeyController:
             self.apply(key.lower())
 
     def apply(self, key: str) -> None:
-        if key == "d":
-            self.runtime.update("focus_bias", 0.0, "keyboard")
-            self.status.focus = "deep"
-        elif key == "b":
-            self.runtime.update("focus_bias", 0.5, "keyboard")
-            self.status.focus = "balanced"
-        elif key == "w":
-            self.runtime.update("focus_bias", 1.0, "keyboard")
-            self.status.focus = "wide"
-        elif key == "n":
-            self.runtime.update("focus_bias", 1.2, "keyboard")
-            self.status.focus = "neighbors"
-        elif key == "]":
-            self.runtime.update("context_multiplier", min(4.0, self.runtime.context_multiplier + 0.25), "keyboard")
-        elif key == "[":
-            self.runtime.update("context_multiplier", max(0.0, self.runtime.context_multiplier - 0.25), "keyboard")
-        elif key == ".":
-            self.runtime.update("relationship_multiplier", min(4.0, self.runtime.relationship_multiplier + 0.25), "keyboard")
-        elif key == ",":
-            self.runtime.update("relationship_multiplier", max(0.0, self.runtime.relationship_multiplier - 0.25), "keyboard")
-        elif key == "+":
-            self.runtime.update("budget_limit", max(self.runtime.budget_limit, self.status.budget_used) + 25, "keyboard")
-        elif key == "-":
-            self.runtime.update("budget_limit", max(self.status.budget_used, self.runtime.budget_limit - 25), "keyboard")
-        elif key in {"g", "r", "u"}:
-            profile_id = {"g": "gentle", "r": "normal", "u": "urgent"}[key]
+        values = {
+            "d": ("focus", "deep"), "b": ("focus", "balanced"),
+            "w": ("focus", "wide"), "n": ("focus", "neighbors"),
+            "g": ("network_profile_id", "gentle"), "r": ("network_profile_id", "normal"),
+            "u": ("network_profile_id", "urgent"), "q": ("cancel_requested", True),
+        }
+        if key in values:
             try:
-                profile = resolve_network_profile(load_network_policy(), profile_id)
+                apply_runtime_control(values[key][0], values[key][1], source="keyboard", runtime=self.runtime, status=self.status)
             except PolicyError:
                 return
-            global NETWORK_PROFILE
-            NETWORK_PROFILE = dict(profile)
-            self.runtime.update("network_profile_id", profile_id, "keyboard")
-            self.status.network = str(profile.get("label", profile_id))
-        elif key == "q":
-            self.runtime.update("cancel_requested", True, "keyboard")
+        elif key == "]":
+            apply_runtime_control("context_multiplier", min(4.0, self.runtime.context_multiplier + 0.25), source="keyboard", runtime=self.runtime, status=self.status)
+        elif key == "[":
+            apply_runtime_control("context_multiplier", max(0.0, self.runtime.context_multiplier - 0.25), source="keyboard", runtime=self.runtime, status=self.status)
+        elif key == ".":
+            apply_runtime_control("relationship_multiplier", min(4.0, self.runtime.relationship_multiplier + 0.25), source="keyboard", runtime=self.runtime, status=self.status)
+        elif key == ",":
+            apply_runtime_control("relationship_multiplier", max(0.0, self.runtime.relationship_multiplier - 0.25), source="keyboard", runtime=self.runtime, status=self.status)
+        elif key == "+":
+            apply_runtime_control("budget_limit", max(self.runtime.budget_limit, self.status.budget_used) + 25, source="keyboard", runtime=self.runtime, status=self.status)
+        elif key == "-":
+            apply_runtime_control("budget_limit", max(self.status.budget_used, self.runtime.budget_limit - 25), source="keyboard", runtime=self.runtime, status=self.status)
 
 
 def request_graceful_cancel(_signum: int, _frame: Any) -> None:
-    if ACTIVE_RUNTIME is not None:
-        if ACTIVE_RUNTIME.cancel_requested:
-            raise KeyboardInterrupt
-        ACTIVE_RUNTIME.cancel_count += 1
-        ACTIVE_RUNTIME.update("cancel_requested", True, source="SIGINT")
+    with RUNTIME_LOCK:
+        if ACTIVE_RUNTIME is not None:
+            if ACTIVE_RUNTIME.cancel_requested:
+                raise KeyboardInterrupt
+            ACTIVE_RUNTIME.cancel_count += 1
+            ACTIVE_RUNTIME.update("cancel_requested", True, source="SIGINT")
+            _set_lifecycle("finalizing")
 
 
 def _require_keys(value: dict[str, Any], expected: set[str], context: str) -> None:
@@ -1325,6 +1447,16 @@ def _presentation_state_path() -> Path:
     return BACKUPS_DIR / "presentation-state.json"
 
 
+def _presentation_is_dirty() -> bool:
+    path = _presentation_state_path()
+    if not path.is_file():
+        return True
+    try:
+        return bool(json.loads(path.read_text(encoding="utf-8")).get("dirty"))
+    except (OSError, json.JSONDecodeError, AttributeError):
+        return True
+
+
 def mark_presentation_dirty(reason: str = "canonical data changed") -> None:
     BACKUPS_DIR.mkdir(parents=True, exist_ok=True)
     write_json_atomic(_presentation_state_path(), {
@@ -1425,6 +1557,7 @@ def _archive_shell(
         + '<!-- puppetbackup-shared-shell-v3 -->'
         + '<header class="archive-chrome">'
         + _reader_controls()
+        + _crawler_controls()
         + _archive_nav(links, active)
         + '</header>'
         + '<main class="reader-content">'
@@ -1541,6 +1674,52 @@ def _reader_controls() -> str:
         '<input id="reader-leading" type="range" min="1.2" max="2.2" step="0.05" value="1.58" data-reader-setting="leading"></div>'
         '<div class="reader-setting"><label for="reader-width">Content width <output id="reader-width-value" for="reader-width">52rem</output></label>'
         '<input id="reader-width" type="range" min="30" max="80" step="2" value="52" data-reader-setting="width" data-unit="rem"></div></form></details>'
+    )
+
+
+def _crawler_controls() -> str:
+    return (
+        '<details id="crawler-controls" class="crawler-controls" hidden>'
+        '<summary>Crawler</summary>'
+        '<p id="crawler-status" class="crawler-status" aria-live="polite">Checking local crawler...</p>'
+        '<div class="crawler-setup">'
+        '<div class="crawler-setting"><label for="crawler-target">Target blog</label><input id="crawler-target" type="text" autocomplete="off"></div>'
+        '<div class="crawler-setting"><label for="crawler-max-posts">Maximum new posts</label><input id="crawler-max-posts" type="number" min="0" value="300"></div>'
+        '<div class="crawler-setting"><label for="crawler-context-mode">Neighborhood</label><select id="crawler-context-mode"><option value="explore">Explore</option><option value="nearby">Nearby</option><option value="none">This blog only</option></select></div>'
+        '<div class="crawler-setting"><label for="crawler-depth">Neighborhood depth</label><input id="crawler-depth" type="number" min="1" value="2"></div>'
+        '<div class="crawler-setting"><label for="crawler-start-focus">Focus</label><select id="crawler-start-focus"><option value="deep">Deep</option><option value="balanced" selected>Balanced</option><option value="wide">Wide</option><option value="neighbors">Neighbors</option></select></div>'
+        '<div class="crawler-setting"><label for="crawler-start-network">Network</label><select id="crawler-start-network"><option value="gentle">Gentle</option><option value="normal">Normal</option><option value="urgent">Urgent</option></select></div>'
+        '<div class="crawler-setting"><label for="crawler-images">Images</label><select id="crawler-images"><option value="small">Small</option><option value="full">Full resolution</option></select></div>'
+        '</div><div class="crawler-live">'
+        '<fieldset><legend>Focus</legend><div class="crawler-buttons">'
+        '<button type="button" data-crawler-control="focus" value="deep">Deep</button>'
+        '<button type="button" data-crawler-control="focus" value="balanced">Balanced</button>'
+        '<button type="button" data-crawler-control="focus" value="wide">Wide</button>'
+        '<button type="button" data-crawler-control="focus" value="neighbors">Neighbors</button>'
+        '</div></fieldset>'
+        '<fieldset><legend>Budget</legend><div class="crawler-buttons">'
+        '<button type="button" data-crawler-step="budget_limit" data-step="-25">-25</button>'
+        '<output id="crawler-budget" aria-label="Crawler budget">-</output>'
+        '<button type="button" data-crawler-step="budget_limit" data-step="25">+25</button>'
+        '</div></fieldset>'
+        '<fieldset><legend>Context</legend><div class="crawler-buttons">'
+        '<button type="button" data-crawler-step="context_multiplier" data-step="-0.25">-</button>'
+        '<output id="crawler-context-multiplier">-</output>'
+        '<button type="button" data-crawler-step="context_multiplier" data-step="0.25">+</button>'
+        '</div></fieldset>'
+        '<fieldset><legend>Affinity</legend><div class="crawler-buttons">'
+        '<button type="button" data-crawler-step="relationship_multiplier" data-step="-0.25">-</button>'
+        '<output id="crawler-affinity">-</output>'
+        '<button type="button" data-crawler-step="relationship_multiplier" data-step="0.25">+</button>'
+        '</div></fieldset>'
+        '<fieldset><label for="crawler-network">Network</label><select id="crawler-network" data-crawler-select="network_profile_id">'
+        '<option value="gentle">Gentle</option><option value="normal">Normal</option><option value="urgent">Urgent</option>'
+        '</select></fieldset>'
+        '</div><div class="crawler-actions">'
+        '<button type="button" class="crawler-start">Start crawl</button>'
+        '<button type="button" class="crawler-stop" data-crawler-stop hidden>Stop safely</button>'
+        '<button type="button" data-crawler-refresh hidden>Refresh archive</button>'
+        '</div></div><p id="crawler-error" class="crawler-error" role="alert" hidden></p></details>'
     )
 
 
@@ -1917,7 +2096,9 @@ def _render_flat_reblog_trail(body: str, destination_page: Path) -> str:
     if not entries:
         return ""
     rendered = []
-    for name, source_href, content in entries:
+    # Tumblr's rendered trail is nested newest-first.  Keep archive cards
+    # newest-first, but read the utterances from the original post outward.
+    for name, source_href, content in reversed(entries):
         avatar = _participant_avatar(name, destination_page)
         avatar_html = (
             f'<img class="trail-avatar" src="{escape(avatar)}" alt="" loading="lazy">'
@@ -2070,7 +2251,7 @@ def _inject_shared_assets(path: Path) -> None:
         text = re.sub(r'<form class="reader-settings".*?</form>', "", text, count=1, flags=re.S)
         text = re.sub(r'<nav class="archive-nav".*?</nav>', "", text, count=1, flags=re.S)
         links, active = _page_chrome(path)
-        chrome = '<!-- puppetbackup-shared-shell-v3 --><header class="archive-chrome">' + _reader_controls() + _archive_nav(links, active) + '</header>'
+        chrome = '<!-- puppetbackup-shared-shell-v3 --><header class="archive-chrome">' + _reader_controls() + _crawler_controls() + _archive_nav(links, active) + '</header>'
         body_match = re.search(r"<body\b[^>]*>", text, flags=re.I)
         if body_match:
             text = text[:body_match.end()] + chrome + text[body_match.end():]
@@ -2400,6 +2581,7 @@ def render_global_pages() -> None:
 
 
 def regenerate_global_presentation(force: bool = False) -> None:
+    global ACTIVE_PRESENTATION_GENERATION
     state_path = _presentation_state_path()
     dirty = force or not (BACKUPS_DIR / "index.html").is_file() or not (BACKUPS_DIR / "dashboard.html").is_file()
     dirty = dirty or not (BACKUPS_DIR / "tag-index.json").is_file() or not (BACKUPS_DIR / "tags" / "index.html").is_file()
@@ -2415,6 +2597,7 @@ def regenerate_global_presentation(force: bool = False) -> None:
         return
     render_global_pages()
     write_json_atomic(state_path, {"dirty": False, "generated_at": time.time()})
+    ACTIVE_PRESENTATION_GENERATION += 1
 
 
 def load_context_document(primary: str) -> dict[str, Any]:
@@ -3217,6 +3400,7 @@ class CrawlerStatus:
     active_blogs: int = 0
     repairs: int = 0
     current_action: str = "Starting"
+    current_blog: str = ""
     last_saved: str = ""
     warnings: list[str] = field(default_factory=list)
     warning_counts: dict[str, int] = field(default_factory=dict)
@@ -3292,11 +3476,13 @@ class CrawlerStatus:
 
     def set_action(self, action: ActionCandidate | None, fallback: str = "") -> None:
         if action is None:
+            self.current_blog = ""
             self.current_action_kind = ""
             self.current_reason = fallback
             self.current_action = fallback
             return
         self.current_action_kind = action.kind
+        self.current_blog = action.blog or ""
         self.current_reason = ", ".join(action.reason_codes)
         self.current_action = action.kind.replace("_", " ")
         if action.blog:
@@ -3305,14 +3491,152 @@ class CrawlerStatus:
             self.current_action += f" / {action.target_post_id}"
 
 
+def status_snapshot(status: CrawlerStatus | None = None) -> dict[str, Any]:
+    status = status or ACTIVE_STATUS
+    if status is None:
+        return {"lifecycle": ACTIVE_LIFECYCLE}
+    with RUNTIME_LOCK:
+        runtime = status.runtime
+        return {
+            "lifecycle": ACTIVE_LIFECYCLE,
+            "target": status.target,
+            "run_id": status.run_id,
+            "focus": status.focus,
+            "context_multiplier": runtime.context_multiplier if runtime else 1.0,
+            "relationship_multiplier": runtime.relationship_multiplier if runtime else 1.0,
+            "network": status.network,
+            "network_profile_id": runtime.network_profile_id if runtime else "",
+            "budget_used": status.budget_used,
+            "budget_limit": status.budget_limit,
+            "saved_by_lane": dict(status.saved_by_lane),
+            "queued_by_lane": dict(status.queued_by_lane),
+            "lane_status": {key: value.snapshot() for key, value in status.lane_status.items()},
+            "scouted": status.scouted,
+            "known_blogs": status.known_blogs,
+            "active_blogs": status.active_blogs,
+            "repairs": status.repairs,
+            "current_action": status.current_action,
+            "current_blog": status.current_blog,
+            "current_reason": status.current_reason,
+            "last_saved": status.last_saved,
+            "context_bracketed": status.context_bracketed,
+            "context_incomplete": status.context_incomplete,
+            "warnings": list(status.warnings),
+            "cancel_requested": bool(runtime.cancel_requested) if runtime else False,
+            "presentation_generation": ACTIVE_PRESENTATION_GENERATION,
+            "presentation_dirty": _presentation_is_dirty(),
+        }
+
+
+def prepare_live_archive_entrypoint() -> None:
+    """Create only the temporary first-run HTML entrypoint needed by a host."""
+    BACKUPS_DIR.mkdir(parents=True, exist_ok=True)
+    ensure_shared_archive_assets()
+    if not (BACKUPS_DIR / "index.html").is_file():
+        (BACKUPS_DIR / "index.html").write_text(
+            _archive_shell(
+                "Tumblr archive",
+                "<h1>Preparing archive</h1><p>The crawler is starting. This page will become the archive as soon as the first presentation is saved.</p>",
+                _global_nav(),
+                active="Blogs",
+            ),
+            encoding="utf-8",
+        )
+
+
+class CrawlerApplication:
+    """Idle application host for browser-first and terminal fallback entry."""
+
+    def __init__(self) -> None:
+        self.lock = threading.RLock()
+        self.state = "idle"
+        self.worker: threading.Thread | None = None
+        self.last_request: CrawlRequest | None = None
+        self.error = ""
+        _set_lifecycle("idle")
+
+    def snapshot(self) -> dict[str, Any]:
+        with self.lock:
+            snapshot = status_snapshot()
+            snapshot.update({
+                "lifecycle": self.state,
+                "application_state": self.state,
+                "ready": self.state in {"idle", "complete", "failed"},
+                "error": self.error,
+                "request": ({
+                    "target": self.last_request.target,
+                    "max_posts": self.last_request.max_posts,
+                    "context": self.last_request.context,
+                    "context_depth": self.last_request.context_depth,
+                    "focus": self.last_request.focus,
+                    "profile_id": self.last_request.profile_id,
+                    "full_res": self.last_request.full_res,
+                } if self.last_request else None),
+            })
+            return snapshot
+
+    def start(self, values: dict[str, Any]) -> dict[str, Any]:
+        allowed = {"target", "max_posts", "context", "context_depth", "focus", "profile_id", "full_res"}
+        unknown = set(values) - allowed
+        if unknown:
+            raise PolicyError("unsupported start fields: " + ", ".join(sorted(unknown)))
+        request = build_crawl_request(
+            values.get("target", ""),
+            max_posts=values.get("max_posts", 300),
+            context=values.get("context", "explore"),
+            context_depth=values.get("context_depth", 2),
+            focus=values.get("focus"),
+            profile_id=values.get("profile_id"),
+            full_res=values.get("full_res", False),
+        )
+        return self.start_request(request)
+
+    def start_request(self, request: CrawlRequest) -> dict[str, Any]:
+        with self.lock:
+            if self.state in {"starting", "running", "stopping", "finalizing"}:
+                raise PolicyError("a crawl is already active")
+            self.last_request = request
+            self.error = ""
+            self.state = "starting"
+            _set_lifecycle("starting")
+            self.worker = threading.Thread(target=self._run, args=(request,), name="crawler-worker", daemon=True)
+            self.worker.start()
+            return self.snapshot()
+
+    def stop(self) -> dict[str, Any]:
+        with self.lock:
+            if self.state not in {"starting", "running"} or ACTIVE_RUNTIME is None:
+                raise PolicyError("no active crawl to stop")
+            self.state = "stopping"
+            _set_lifecycle("finalizing")
+        return apply_runtime_control("cancel_requested", True, source="browser")
+
+    def _run(self, request: CrawlRequest) -> None:
+        with self.lock:
+            self.state = "running"
+            _set_lifecycle("running")
+        try:
+            result = main(request.argv(), install_signal_handlers=False)
+            with self.lock:
+                self.state = "complete" if result == 0 else "failed"
+                if result != 0 and not self.error:
+                    self.error = f"crawler exited with status {result}"
+                _set_lifecycle(self.state)
+        except Exception as exc:
+            with self.lock:
+                self.state = "failed"
+                self.error = str(exc)
+                _set_lifecycle("failed")
+
+
 class ProgressRenderer:
     def __init__(self, status: CrawlerStatus, stream: Any = None, verbose: bool = False) -> None:
         self.status = status
         self.stream = stream or sys.stdout
         self.verbose = verbose
         self.terminal = bool(getattr(self.stream, "isatty", lambda: False)())
-        self.android_compact = self.terminal and is_android_runtime()
-        self.live = self.terminal and not self.android_compact and os.environ.get("TERM") not in {None, "dumb"}
+        self.compact_terminal = self.terminal and HOST_CAPABILITIES["compact_terminal"]
+        self.live = self.terminal and not self.compact_terminal and os.environ.get("TERM") not in {None, "dumb"}
         try:
             columns = shutil.get_terminal_size(fallback=(80, 20)).columns
         except OSError:
@@ -3451,7 +3775,7 @@ class ProgressRenderer:
         if not force and not self.verbose and now - self.last_emit < 0.5:
             return
         try:
-            if self.android_compact:
+            if self.compact_terminal:
                 self._render_compact()
                 self.stream.flush()
                 self.last_emit = now
@@ -3463,14 +3787,14 @@ class ProgressRenderer:
             self.stream.flush()
         except (OSError, ValueError, AttributeError):
             self.live = False
-            self.android_compact = False
+            self.compact_terminal = False
             self.previous_lines = 0
             self.compact_line_active = False
         self.last_emit = now
 
     def finish(self) -> None:
         try:
-            if self.android_compact and self.compact_line_active:
+            if self.compact_terminal and self.compact_line_active:
                 self.stream.write("\n")
                 self.stream.flush()
                 self.compact_line_active = False
@@ -3480,7 +3804,7 @@ class ProgressRenderer:
                 self.previous_lines = 0
         except (OSError, ValueError, AttributeError):
             self.live = False
-            self.android_compact = False
+            self.compact_terminal = False
             self.previous_lines = 0
             self.compact_line_active = False
 
@@ -3642,6 +3966,7 @@ def run_incremental_capture(
     requested_depth: int | None,
     context_policy: dict[str, Any],
     focus: str | None = None,
+    install_signal_handlers: bool = True,
 ) -> tuple[BlogState, dict[str, Any]]:
     config = context_config(context_policy, mode, requested_depth, focus)
     reconcile_acquisition_ledger()
@@ -3673,10 +3998,13 @@ def run_incremental_capture(
         budget_limit=max_posts,
         network_profile_id=str(NETWORK_PROFILE.get("id", "gentle")),
     )
-    global ACTIVE_RUNTIME, ACTIVE_PROGRESS_RENDERER
-    previous_sigint = signal.getsignal(signal.SIGINT)
-    signal.signal(signal.SIGINT, request_graceful_cancel)
+    global ACTIVE_RUNTIME, ACTIVE_STATUS, ACTIVE_PROGRESS_RENDERER
+    previous_sigint = signal.getsignal(signal.SIGINT) if install_signal_handlers else None
+    if install_signal_handlers:
+        signal.signal(signal.SIGINT, request_graceful_cancel)
     ACTIVE_RUNTIME = runtime
+    ACTIVE_STATUS = status
+    _set_lifecycle("running")
     status.runtime = runtime
     primary_state.run_id = run_id
     primary_state.progress = status
@@ -3861,6 +4189,7 @@ def run_incremental_capture(
     while True:
         key_controller.poll()
         if runtime.cancel_requested:
+            _set_lifecycle("finalizing")
             status.current_action = "Cancel requested; finalizing"
             status.current_reason = "current atomic work complete"
             for item in document.get("blogs", []):
@@ -3868,6 +4197,7 @@ def run_incremental_capture(
                     item["run_deferred"] = True
             break
         if acquisition_budget_exhausted(status):
+            _set_lifecycle("finalizing")
             status.current_action = "Budget exhausted; finalizing"
             for item in document.get("blogs", []):
                 if item.get("status") in ("queued", "probe", "partial"):
@@ -4177,12 +4507,14 @@ def run_incremental_capture(
     renderer.render(force=True)
     renderer.finish()
     ACTIVE_RUNTIME = None
+    _set_lifecycle("complete")
     ACTIVE_PROGRESS_RENDERER = None
-    signal.signal(signal.SIGINT, previous_sigint)
+    if install_signal_handlers and previous_sigint is not None:
+        signal.signal(signal.SIGINT, previous_sigint)
     return primary_state, document
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None, *, install_signal_handlers: bool = True) -> int:
     global ACTIVE_PROGRESS_RENDERER, ACTIVE_RUNTIME
     parser = argparse.ArgumentParser(
         prog="tumblr-scraper",
@@ -4227,18 +4559,32 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="show raw tumblr-backup output and diagnostic milestones",
     )
+    parser.add_argument(
+        "--compact-terminal",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
     args = parser.parse_args(argv)
+    if args.compact_terminal:
+        set_host_capabilities(compact_terminal=True, keyboard_controls=False)
     global VERBOSE
     VERBOSE = bool(args.verbose)
     try:
-        policy = load_network_policy()
-        selected_profile = resolve_network_profile(policy, args.profile)
+        request = build_crawl_request(
+            args.username,
+            max_posts=args.max_posts,
+            context=args.context,
+            context_depth=args.context_depth,
+            focus=args.focus,
+            profile_id=args.profile,
+            full_res=args.full_res,
+        )
     except PolicyError as exc:
-        parser.error(f"network policy: {exc}")
-    configure(args.username, args.max_posts, full_res=args.full_res, profile=selected_profile)
+        parser.error(f"crawl configuration: {exc}")
+    configure(request.target, request.max_posts, full_res=request.full_res, profile=resolve_network_profile(load_network_policy(), request.profile_id))
     try:
         context_policy = load_context_policy()
-        context_config(context_policy, args.context, args.context_depth, args.focus)
+        context_config(context_policy, request.context, request.context_depth, request.focus)
     except PolicyError as exc:
         parser.error(f"context policy: {exc}")
 
@@ -4250,18 +4596,19 @@ def main(argv: list[str] | None = None) -> int:
         print("Inspection limit: unbounded")
     print(f"Network aggression: {NETWORK_PROFILE['label']}")
     print(f"  {NETWORK_PROFILE['description']}")
-    print(f"Crawl focus: {FOCUS_LABELS[args.focus or context_policy.get('default_focus', 'balanced')]}")
+    print(f"Crawl focus: {FOCUS_LABELS[request.focus or context_policy.get('default_focus', 'balanced')]}")
 
     try:
         ensure_tumblr_backup()
         primary_state, document = run_incremental_capture(
-            args.username,
-            args.max_posts,
-            args.full_res,
-            args.context,
-            args.context_depth,
+            request.target,
+            request.max_posts,
+            request.full_res,
+            request.context,
+            request.context_depth,
             context_policy,
-            args.focus,
+            request.focus,
+            install_signal_handlers=install_signal_handlers,
         )
         regenerate_presentation(args.username, document, finalize_primary=True)
         regenerate_global_presentation(force=True)
@@ -4280,6 +4627,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     except KeyboardInterrupt:
+        _set_lifecycle("finalizing")
         if ACTIVE_PROGRESS_RENDERER is not None:
             ACTIVE_PROGRESS_RENDERER.finish()
         ACTIVE_PROGRESS_RENDERER = None
@@ -4301,6 +4649,7 @@ def main(argv: list[str] | None = None) -> int:
         return 130
 
     except TumblrRateLimitedError:
+        _set_lifecycle("failed")
         if ACTIVE_PROGRESS_RENDERER is not None:
             ACTIVE_PROGRESS_RENDERER.finish()
         ACTIVE_PROGRESS_RENDERER = None
@@ -4316,6 +4665,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     except Exception as exc:
+        _set_lifecycle("failed")
         if ACTIVE_PROGRESS_RENDERER is not None:
             ACTIVE_PROGRESS_RENDERER.finish()
         ACTIVE_PROGRESS_RENDERER = None

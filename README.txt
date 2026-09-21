@@ -38,18 +38,21 @@ LINUX
 2. Open the Tumblr-Scraper folder.
 3. Double-click Tumblr Scraper - Linux.desktop.
 
-If you choose Run a new crawl, the program asks for the Tumblr blog name.
-Enter only the name, for example:
+When the launcher starts, it opens the archive in your normal browser and
+waits there for your instructions. Open the collapsed Crawler panel, then
+enter the Tumblr blog name, for example:
 
 vigilanceos
 
-Your saved blogs are inside the Backups folder. The archive opens in your
-normal browser when the backup finishes.
+Your saved blogs are inside the Backups folder. The browser archive is
+available before, during, and after a crawl.
 
-When the launcher opens, choose Open existing archive or Run a new crawl. The
-archive opens directly from Backups/index.html. Reading does not require
-Python, Tumblr, or a localhost server. A localhost viewer may still be used
-as a development preview convenience.
+Press Start crawl in the browser. The terminal remains available as a
+fallback, but normal use does not require terminal prompts. The archive is
+also available later at Backups/index.html. Reading does not require Python,
+Tumblr, or a localhost server.
+
+The application boundary and bridge contract are documented in ARCHITECTURE.md.
 
 
 

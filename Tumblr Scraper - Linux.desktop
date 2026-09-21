@@ -2,6 +2,6 @@
 [Desktop Entry]
 Type=Application
 Name=Tumblr Scraper - Linux
-Comment=Open the local archive or run a Tumblr crawl
+Comment=Start Tumblr-Scraper and open its browser interface
 Terminal=true
 Exec=sh -c "cd \"\\$(dirname \"\\$1\")\" && exec python3 \"Tumblr Scraper - Android.py\"" sh %k
