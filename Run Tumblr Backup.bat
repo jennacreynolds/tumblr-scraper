@@ -14,12 +14,12 @@ set "status=1"
 goto finish
 
 :use_py_launcher
-py -3 "Android Tumblr-Scraper.py"
+py -3 "Run Tumblr Backup.py"
 set "status=%errorlevel%"
 goto finish
 
 :use_python_launcher
-python "Android Tumblr-Scraper.py"
+python "Run Tumblr Backup.py"
 set "status=%errorlevel%"
 goto finish
 

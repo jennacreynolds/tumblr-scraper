@@ -10,7 +10,7 @@ cd "$(dirname "$0")" || {
 
 status=0
 if command -v python3 >/dev/null 2>&1; then
-    python3 "Android Tumblr-Scraper.py"
+    python3 "Run Tumblr Backup.py"
     status=$?
 else
     printf 'Python 3 was not found. Install Python 3, then run this launcher again.\n'

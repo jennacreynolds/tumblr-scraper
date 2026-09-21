@@ -873,7 +873,7 @@ class TerminalOutputTests(unittest.TestCase):
     def test_localhost_handler_suppresses_routine_access_logs(self) -> None:
         import contextlib
         import io
-        path = Path(__file__).parents[1] / "Android Tumblr-Scraper.py"
+        path = Path(__file__).parents[1] / "Run Tumblr Backup.py"
         spec = importlib.util.spec_from_file_location("android_tumblr_scraper_logs", path)
         assert spec is not None and spec.loader is not None
         module = importlib.util.module_from_spec(spec)
@@ -961,7 +961,7 @@ class FailureRecoveryTests(unittest.TestCase):
 class AndroidLauncherTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        path = Path(__file__).parents[1] / "Android Tumblr-Scraper.py"
+        path = Path(__file__).parents[1] / "Run Tumblr Backup.py"
         spec = importlib.util.spec_from_file_location("android_tumblr_scraper", path)
         assert spec is not None and spec.loader is not None
         module = importlib.util.module_from_spec(spec)
