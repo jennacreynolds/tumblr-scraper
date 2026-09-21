@@ -4,6 +4,7 @@ import json
 import importlib.util
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -23,9 +24,12 @@ class BootstrapTests(unittest.TestCase):
         self.temp.cleanup()
 
     def seed_runtime(self) -> Path:
-        runtime = self.root / ".runtime" / "venv" / "bin" / "python"
+        runtime = bootstrap.runtime_python(self.root)
         runtime.parent.mkdir(parents=True)
-        runtime.symlink_to(Path(sys.executable).resolve())
+        if os.name == "nt":
+            shutil.copy2(sys.executable, runtime)
+        else:
+            runtime.symlink_to(Path(sys.executable).resolve())
         stamp = self.root / ".runtime" / "bootstrap-state.json"
         stamp.write_text(json.dumps(bootstrap._expected_stamp()) + "\n", encoding="utf-8")
         return runtime
@@ -63,7 +67,7 @@ class BootstrapTests(unittest.TestCase):
         install.assert_called_once_with(self.root, repaired)
 
     def test_dependency_install_targets_private_runtime(self) -> None:
-        runtime = self.root / ".runtime" / "venv" / "bin" / "python"
+        runtime = bootstrap.runtime_python(self.root)
         runtime.parent.mkdir(parents=True)
         runtime.write_text("python", encoding="utf-8")
         completed = subprocess.CompletedProcess([], 0)

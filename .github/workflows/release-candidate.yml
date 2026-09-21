@@ -1,0 +1,92 @@
+name: Release candidate gate
+
+on:
+  push:
+    branches:
+      - "release-candidate/**"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Candidate commit, branch, or tag"
+        required: true
+        default: "main"
+      artifact_name:
+        description: "Canonical ZIP filename"
+        required: true
+        default: "Tumblr-Scraper-Candidate.zip"
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    outputs:
+      commit: ${{ steps.identity.outputs.commit }}
+      artifact_name: ${{ steps.identity.outputs.artifact_name }}
+      sha256: ${{ steps.identity.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Build one canonical candidate ZIP
+        run: >-
+          python tools/build_release_artifact.py
+          --output-dir candidate
+          --artifact-name "${{ inputs.artifact_name || 'Tumblr-Scraper-Candidate.zip' }}"
+          --commit "$(git rev-parse HEAD)"
+      - name: Verify canonical candidate identity
+        run: >-
+          python tools/verify_release_artifact.py
+          --zip "candidate/${{ inputs.artifact_name || 'Tumblr-Scraper-Candidate.zip' }}"
+          --manifest candidate/release-manifest.json
+          --commit "$(git rev-parse HEAD)"
+      - id: identity
+        name: Record candidate identity
+        shell: bash
+        run: |
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=${{ inputs.artifact_name || 'Tumblr-Scraper-Candidate.zip' }}" >> "$GITHUB_OUTPUT"
+          echo "sha256=$(sha256sum "candidate/${{ inputs.artifact_name || 'Tumblr-Scraper-Candidate.zip' }}" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-candidate
+          path: candidate/
+          if-no-files-found: error
+          retention-days: 14
+
+  native:
+    needs: package
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.package.outputs.commit }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-candidate
+          path: candidate
+      - name: Verify the downloaded canonical ZIP
+        run: >-
+          python tools/verify_release_artifact.py
+          --zip "candidate/${{ needs.package.outputs.artifact_name }}"
+          --manifest candidate/release-manifest.json
+          --commit "${{ needs.package.outputs.commit }}"
+      - name: Install Linux desktop validator
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y desktop-file-utils
+      - name: Run native gate against the downloaded ZIP
+        run: >-
+          python tools/run_native_release_gate.py
+          --zip "candidate/${{ needs.package.outputs.artifact_name }}"
+          --manifest candidate/release-manifest.json

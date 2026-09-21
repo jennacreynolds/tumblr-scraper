@@ -68,6 +68,7 @@ neocities-credentials.json
 /tests/tmp/
 /tests/output/
 /test-output/
+/release-candidates/
 
 # Coverage/tool output
 .coverage

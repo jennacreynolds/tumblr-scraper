@@ -66,6 +66,7 @@ also available later at Backups/index.html. Reading does not require Python,
 Tumblr, or a localhost server.
 
 The application boundary and bridge contract are documented in ARCHITECTURE.md.
+The repeatable immutable release procedure is documented in RELEASE_GATE.md.
 
 FIRST-RUN DEPENDENCIES
 

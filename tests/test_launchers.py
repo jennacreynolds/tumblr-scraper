@@ -25,6 +25,7 @@ LAUNCHER_FILES = (
 )
 
 
+@unittest.skipUnless(os.name == "posix", "POSIX launcher tests run on Linux/macOS; Windows uses launcher contract tests")
 class LauncherPortabilityTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory(prefix="launcher acceptance ")
@@ -135,14 +136,6 @@ class LauncherPortabilityTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("Tumblr-Scraper is ready.", result.stdout)
-
-    def test_windows_launcher_uses_script_directory(self) -> None:
-        text = (self.root / "Tumblr Scraper - Windows.bat").read_text(encoding="utf-8")
-        self.assertIn('set "PROJECT_ROOT=%~dp0"', text)
-        self.assertIn('pushd "%PROJECT_ROOT%"', text)
-        self.assertIn('%PROJECT_ROOT%bootstrap.py', text)
-        self.assertIn('where python3', text)
-        self.assertNotIn('cd /d "%CD%"', text)
 
     def test_cli_without_arguments_prints_friendly_usage(self) -> None:
         result = subprocess.run(

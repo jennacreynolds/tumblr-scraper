@@ -123,6 +123,11 @@ From the repository root, run:
 
 The tests use temporary archive roots and do not require Tumblr network access.
 
+Release candidates use the immutable-artifact procedure in `RELEASE_GATE.md`.
+It builds one ZIP, records its commit and SHA-256, tests that exact artifact
+on native CI runners, and keeps the Android/Pydroid gate separate from flaky
+browser UI handoff evidence.
+
 
 
 
