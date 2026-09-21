@@ -1455,12 +1455,12 @@ def _reader_controls() -> str:
     return (
         '<details class="reader-settings"><summary>Reader settings</summary>'
         '<form class="reader-settings-panel" aria-label="Reader settings">'
-        '<label for="reader-size">Text size <output id="reader-size-value" for="reader-size">1.08rem</output></label>'
-        '<input id="reader-size" type="range" min="0.9" max="1.8" step="0.05" value="1.08" data-reader-setting="size" data-unit="rem"> '
-        '<label for="reader-leading">Line spacing <output id="reader-leading-value" for="reader-leading">1.58</output></label>'
-        '<input id="reader-leading" type="range" min="1.2" max="2.2" step="0.05" value="1.58" data-reader-setting="leading"> '
-        '<label for="reader-width">Content width <output id="reader-width-value" for="reader-width">52rem</output></label>'
-        '<input id="reader-width" type="range" min="30" max="80" step="2" value="52" data-reader-setting="width" data-unit="rem"></form></details>'
+        '<div class="reader-setting"><label for="reader-size">Text size <output id="reader-size-value" for="reader-size">1.08rem</output></label>'
+        '<input id="reader-size" type="range" min="0.9" max="1.8" step="0.05" value="1.08" data-reader-setting="size" data-unit="rem"></div>'
+        '<div class="reader-setting"><label for="reader-leading">Line spacing <output id="reader-leading-value" for="reader-leading">1.58</output></label>'
+        '<input id="reader-leading" type="range" min="1.2" max="2.2" step="0.05" value="1.58" data-reader-setting="leading"></div>'
+        '<div class="reader-setting"><label for="reader-width">Content width <output id="reader-width-value" for="reader-width">52rem</output></label>'
+        '<input id="reader-width" type="range" min="30" max="80" step="2" value="52" data-reader-setting="width" data-unit="rem"></div></form></details>'
     )
 
 

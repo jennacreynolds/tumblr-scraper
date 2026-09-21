@@ -36,10 +36,11 @@ h1 { font-size: clamp(1.8rem, 4vw, 2.65rem); }
 .reader-settings { margin: 0 auto; color: var(--text-muted); font-size: .82rem; }
 .reader-settings summary { width: fit-content; padding: .2rem .45rem; color: var(--text); cursor: pointer; border-radius: .3rem; list-style-position: inside; }
 .reader-settings summary:hover, .reader-settings summary:focus-visible { background: var(--card-bg); }
-.reader-settings-panel { display: flex; flex-wrap: wrap; gap: .3rem .65rem; align-items: center; margin: .3rem 0 .55rem; padding: .55rem .65rem; background: var(--card-bg); border: 1px solid var(--card-border); border-radius: .4rem; }
-.reader-settings-panel label { display: inline-flex; align-items: center; gap: .3rem; }
-.reader-settings-panel output { min-width: 3.2em; color: var(--text); font-variant-numeric: tabular-nums; }
-.reader-settings-panel input[type="range"] { width: 6.5rem; accent-color: var(--link); }
+.reader-settings-panel { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: .55rem .8rem; margin: .3rem 0 .55rem; padding: .65rem; background: var(--card-bg); border: 1px solid var(--card-border); border-radius: .4rem; }
+.reader-setting { display: grid; grid-template-columns: auto minmax(5rem, 1fr); gap: .45rem; align-items: center; min-width: 0; }
+.reader-setting label { min-width: 0; color: var(--text-muted); white-space: nowrap; }
+.reader-setting output { min-width: 3.2em; color: var(--text); font-variant-numeric: tabular-nums; }
+.reader-setting input[type="range"] { width: 100%; min-width: 0; accent-color: var(--link); }
 .archive-nav { display: flex; flex-wrap: wrap; gap: .3rem .4rem; margin: 0 auto; padding: .45rem 0 .6rem; text-transform: uppercase; letter-spacing: .04em; font-size: .8rem; }
 .archive-nav a { padding: .25rem .55rem; border: 1px solid transparent; border-radius: .3rem; text-decoration: none; }
 .archive-nav a:hover, .archive-nav a:focus-visible { background: var(--card-bg); border-color: var(--card-border); }
@@ -85,7 +86,8 @@ h1 { font-size: clamp(1.8rem, 4vw, 2.65rem); }
 @media (max-width: 40rem) {
     body { padding: 1rem .7rem 4rem; }
     .archive-chrome { margin: -1rem -.7rem 1.2rem; padding-inline: .7rem; }
-    .reader-settings-panel { overflow-x: auto; flex-wrap: nowrap; white-space: nowrap; }
+    .reader-settings-panel { grid-template-columns: 1fr; }
+    .reader-setting { grid-template-columns: minmax(8.5rem, auto) 1fr; }
     .archive-nav { overflow-x: auto; flex-wrap: nowrap; white-space: nowrap; }
     .post-card-header { padding: .8rem .8rem .55rem; }
     .post-rendered-content, .post-card-footer { padding-inline: .8rem; }
