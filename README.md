@@ -1,8 +1,3 @@
-▖▖▄▖▄▖▄▖▖ ▄▖▖ ▖▄▖▄▖
-▌▌▐ ▌ ▐ ▌ ▌▌▛▖▌▌ ▙▖
-▚▘▟▖▙▌▟▖▙▖▛▌▌▝▌▙▖▙▖
-                   
-
 TUMBLR SCRAPER
 
 This builds a growing local library of public Tumblr blogs and their observed neighborhood.
