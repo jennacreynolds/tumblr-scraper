@@ -1322,7 +1322,7 @@ def _archive_nav(links: list[tuple[str, str]], active: str = "") -> str:
     for label, href in links:
         current = ' aria-current="page"' if label == active else ""
         items.append(f'<a href="{escape(href)}"{current}>{escape(label)}</a>')
-    return '<nav class="archive-nav" aria-label="Primary">' + " | ".join(items) + "</nav>"
+    return '<nav class="archive-nav" aria-label="Primary">' + "".join(items) + "</nav>"
 
 
 def _archive_shell(
@@ -1342,8 +1342,10 @@ def _archive_shell(
         f'<link rel="stylesheet" href="{escape(stylesheet)}">'
         f'<script defer src="{escape(script)}"></script>{extra}</head><body>'
         + '<!-- puppetbackup-shared-shell-v3 -->'
+        + '<header class="archive-chrome">'
         + _reader_controls()
         + _archive_nav(links, active)
+        + '</header>'
         + '<main class="reader-content">'
         + content
         + "</main></body></html>"
@@ -1450,10 +1452,13 @@ def ensure_shared_archive_assets() -> None:
 
 def _reader_controls() -> str:
     return (
-        '<form class="reader-settings" aria-label="Reader settings"><span>Reader:</span> '
-        '<label for="reader-size">Text size</label> <select id="reader-size" data-reader-setting="size"><option value=".9rem">Small</option><option value="1.08rem">Medium</option><option value="1.15rem">Large</option></select> '
-        '<label for="reader-leading">Line height</label> <select id="reader-leading" data-reader-setting="leading"><option value="1.35">Tight</option><option value="1.58">Comfortable</option><option value="1.8">Relaxed</option></select> '
-        '<label for="reader-width">Content width</label> <select id="reader-width" data-reader-setting="width"><option value="38rem">Narrow</option><option value="52rem">Standard</option><option value="64rem">Wide</option></select></form>'
+        '<form class="reader-settings" aria-label="Reader settings"><strong class="reader-settings-title">Reader settings</strong> '
+        '<label for="reader-size">Text size <output id="reader-size-value" for="reader-size">1.08rem</output></label>'
+        '<input id="reader-size" type="range" min="0.9" max="1.8" step="0.05" value="1.08" data-reader-setting="size" data-unit="rem"> '
+        '<label for="reader-leading">Line spacing <output id="reader-leading-value" for="reader-leading">1.58</output></label>'
+        '<input id="reader-leading" type="range" min="1.2" max="2.2" step="0.05" value="1.58" data-reader-setting="leading"> '
+        '<label for="reader-width">Content width <output id="reader-width-value" for="reader-width">52rem</output></label>'
+        '<input id="reader-width" type="range" min="30" max="80" step="2" value="52" data-reader-setting="width" data-unit="rem"></form>'
     )
 
 
@@ -1797,7 +1802,7 @@ def _inject_shared_assets(path: Path) -> None:
         text = re.sub(r'<form class="reader-settings".*?</form>', "", text, count=1, flags=re.S)
         text = re.sub(r'<nav class="archive-nav".*?</nav>', "", text, count=1, flags=re.S)
         links, active = _page_chrome(path)
-        chrome = '<!-- puppetbackup-shared-shell-v3 -->' + _reader_controls() + _archive_nav(links, active)
+        chrome = '<!-- puppetbackup-shared-shell-v3 --><header class="archive-chrome">' + _reader_controls() + _archive_nav(links, active) + '</header>'
         body_match = re.search(r"<body\b[^>]*>", text, flags=re.I)
         if body_match:
             text = text[:body_match.end()] + chrome + text[body_match.end():]

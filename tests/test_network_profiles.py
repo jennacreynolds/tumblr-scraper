@@ -711,6 +711,8 @@ class ContextTests(unittest.TestCase):
                     self.assertTrue(page.is_file(), page)
                     text = page.read_text(encoding="utf-8")
                     self.assertIn("class=\"archive-nav\"", text)
+                    self.assertIn("class=\"archive-chrome\"", text)
+                    self.assertIn('type="range"', text)
                     self.assertIn("puppet_reader", (main.BACKUPS_DIR / "assets" / "archive.js").read_text(encoding="utf-8"))
                     for href in re.findall(r'<link rel="stylesheet" href="([^"]+archive\.css)">', text):
                         self.assertTrue((page.parent / href).resolve().is_file(), (page, href))
