@@ -193,6 +193,44 @@ class PresentationTests(unittest.TestCase):
             finally:
                 main.BACKUPS_DIR = old_backups
 
+    def test_normalization_preserves_source_blog_title_and_bio(self) -> None:
+        old_blog = main.BLOG
+        main.BLOG = "example"
+        try:
+            record = main.normalize_post(
+                {
+                    "id": 1,
+                    "unix-timestamp": 1,
+                    "type": "regular",
+                    "regular-body": "Hello",
+                    "tumblelog": {"name": "example", "title": "The Example", "description": "A real bio"},
+                },
+                {"tumblelog": {"name": "example", "title": "Fallback"}},
+                1,
+            )
+            self.assertEqual(record["blog"]["title"], "The Example")
+            self.assertEqual(record["blog"]["description"], "A real bio")
+        finally:
+            main.BLOG = old_blog
+
+    def test_profile_homepage_capture_is_one_time_and_metadata_only(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            old_backups = main.BACKUPS_DIR
+            main.BACKUPS_DIR = Path(directory) / "Backups"
+            response = mock.MagicMock()
+            response.__enter__.return_value = response
+            response.read.return_value = b'<title>The Example</title><meta name="description" content="A public bio">'
+            try:
+                with mock.patch.object(main, "urlopen", return_value=response) as opened:
+                    main.capture_blog_profile_metadata("example")
+                    main.capture_blog_profile_metadata("example")
+                profile = json.loads((main.BACKUPS_DIR / "example" / "profile" / "profile.json").read_text())
+                self.assertEqual(profile["title"], "The Example")
+                self.assertEqual(profile["description"], "A public bio")
+                opened.assert_called_once()
+            finally:
+                main.BACKUPS_DIR = old_backups
+
     def test_global_catalog_orders_blogs_by_local_post_count(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             old_backups = main.BACKUPS_DIR

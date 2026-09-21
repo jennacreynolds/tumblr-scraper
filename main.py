@@ -724,6 +724,76 @@ def fetch_public_page(start: int, count: int = PAGE_SIZE) -> dict[str, Any]:
         ) from exc
 
 
+class _ProfileMetadataParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.title_parts: list[str] = []
+        self.description = ""
+        self.in_title = False
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.lower() == "title":
+            self.in_title = True
+            return
+        if tag.lower() != "meta":
+            return
+        values = {name.lower(): value or "" for name, value in attrs}
+        key = values.get("name", "").lower() or values.get("property", "").lower()
+        if key in {"description", "og:description", "twitter:description"} and values.get("content"):
+            self.description = values["content"].strip()
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.lower() == "title":
+            self.in_title = False
+
+    def handle_data(self, data: str) -> None:
+        if self.in_title:
+            self.title_parts.append(data)
+
+    @property
+    def title(self) -> str:
+        return " ".join("".join(self.title_parts).split())
+
+
+def capture_blog_profile_metadata(blog: str) -> None:
+    """Capture one public blog-homepage profile snapshot without post work."""
+    profile_path = _profile_path(blog)
+    existing: dict[str, Any] = {}
+    if profile_path.is_file():
+        try:
+            loaded = json.loads(profile_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                existing = loaded
+        except (OSError, json.JSONDecodeError):
+            existing = {}
+    if existing.get("profile_fetch_attempted"):
+        return
+
+    profile = dict(existing)
+    profile.update({
+        "schema_version": 1,
+        "blog": blog,
+        "observed_at": time.time(),
+        "profile_fetch_attempted": True,
+        "profile_fetch_provenance": "public Tumblr blog homepage",
+    })
+    try:
+        request = Request(f"https://{canonical_blog_name(blog)}.tumblr.com/", headers={"User-Agent": USER_AGENT})
+        with urlopen(request, timeout=30) as response:
+            parser = _ProfileMetadataParser()
+            parser.feed(response.read().decode("utf-8", errors="replace"))
+            parser.close()
+        if parser.title:
+            profile["title"] = parser.title
+        if parser.description:
+            profile["description"] = parser.description
+        profile["source"] = "public Tumblr blog homepage metadata"
+        profile["profile_fetch_status"] = "captured"
+    except (OSError, HTTPError, URLError, ValueError):
+        profile["profile_fetch_status"] = "unavailable"
+    write_json_atomic(profile_path, profile)
+
+
 def blog_info(feed: dict[str, Any], total: int) -> dict[str, Any]:
     t = feed.get("tumblelog") or feed.get("blog") or {}
     return {
@@ -777,12 +847,18 @@ def normalize_post(p: dict[str, Any], feed: dict[str, Any], total: int) -> dict[
     post_url = p.get("url-with-slug") or p.get("url") or f"https://{BLOG_HOST}/post/{p['id']}"
     timestamp = int(p.get("unix-timestamp") or 0)
 
+    feed_blog = feed.get("tumblelog") or feed.get("blog") or {}
+    source_blog = p.get("tumblelog") if isinstance(p.get("tumblelog"), dict) else {}
+    merged_blog = dict(feed_blog) if isinstance(feed_blog, dict) else {}
+    if isinstance(source_blog, dict):
+        merged_blog.update(source_blog)
+
     out: dict[str, Any] = {
         "id": int(p["id"]),
         "id_string": str(p["id"]),
         "blog_name": BLOG,
         "tumblelog": BLOG,
-        "blog": blog_info(feed, total),
+        "blog": blog_info({"tumblelog": merged_blog}, total),
         "post_url": post_url,
         "short_url": post_url,
         "type": post_type,
@@ -950,6 +1026,7 @@ def acquire_and_process() -> tuple[int, int, bool]:
     reached_existing = False
 
     first_feed_request = True
+    profile_captured = False
     while MAX_POSTS == 0 or inspected < MAX_POSTS:
         request_count = PAGE_SIZE if MAX_POSTS == 0 else min(PAGE_SIZE, MAX_POSTS - inspected)
         if not first_feed_request:
@@ -961,6 +1038,9 @@ def acquire_and_process() -> tuple[int, int, bool]:
         feed = fetch_public_page(start, request_count)
         first_feed_request = False
         posts = list(feed.get("posts") or [])
+        if posts and not profile_captured:
+            capture_blog_profile_metadata(BLOG)
+            profile_captured = True
 
         if total is None:
             total = int(feed.get("posts-total") or len(posts))
@@ -1860,20 +1940,39 @@ def _profile_path(blog: str) -> Path:
 
 
 def _write_profile_snapshot(blog: str, records: list[dict[str, Any]]) -> dict[str, Any]:
+    path = _profile_path(blog)
+    existing: dict[str, Any] = {}
+    if path.is_file():
+        try:
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                existing = loaded
+        except (OSError, json.JSONDecodeError):
+            existing = {}
     current = max(records, key=lambda record: int(record.get("timestamp") or 0), default={})
-    blog_infos = [record.get("blog") for record in records if isinstance(record.get("blog"), dict)]
-    blog_info = next((value for value in blog_infos if value.get("description")), None) or (current.get("blog") if isinstance(current.get("blog"), dict) else {})
+    blog_infos = []
+    for record in records:
+        value = dict(record.get("blog")) if isinstance(record.get("blog"), dict) else {}
+        source = record.get("_puppetbackup_source_record")
+        source_blog = source.get("tumblelog") if isinstance(source, dict) and isinstance(source.get("tumblelog"), dict) else {}
+        value.update(source_blog)
+        if value:
+            blog_infos.append(value)
+    current_info = next((value for value in blog_infos if value.get("title") or value.get("description")), {})
+    title_info = next((value for value in blog_infos if value.get("title")), current_info)
+    description_info = next((value for value in blog_infos if value.get("description")), current_info)
+    description = description_info.get("description") or existing.get("description") or None
+    profile_source = "canonical post JSON blog metadata" if description_info.get("description") else existing.get("source") or "profile snapshot metadata"
     profile = {
         "schema_version": 1,
         "blog": blog,
-        "title": str(blog_info.get("title") or current.get("tumblelog") or blog),
-        "description": blog_info.get("description") if "description" in blog_info else None,
-        "url": str(blog_info.get("url") or current.get("post_url") or f"https://{blog}.tumblr.com/"),
+        "title": str(title_info.get("title") or existing.get("title") or current.get("tumblelog") or blog),
+        "description": description,
+        "url": str(title_info.get("url") or current.get("post_url") or f"https://{blog}.tumblr.com/"),
         "observed_at": time.time(),
-        "source": "canonical post JSON blog metadata",
+        "source": profile_source,
         "avatar_source": "upstream theme/avatar asset when available",
     }
-    path = _profile_path(blog)
     write_json_atomic(path, profile)
     theme_avatars = sorted((canonical_archive_root(blog) / "theme").glob("avatar.*"))
     if theme_avatars:
@@ -2555,6 +2654,7 @@ def _process_source_ids(state: BlogState, sources: list[dict[str, Any]], candida
     assert state.out == canonical_archive_root(candidate.blog or "")
     assert acquisition_lane == candidate.lane
     activate_blog_state(state)
+    capture_blog_profile_metadata(state.blog)
     total = state.feed_total or len(sources)
     ids = []
     for source in sources:
