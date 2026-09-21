@@ -1578,11 +1578,13 @@ class _RenderedPostFragment(HTMLParser):
     def _in_fragment(self) -> bool:
         return self.started and not self.finished and self.article_depth > 0
 
-    def _attrs(self, attrs: list[tuple[str, str | None]]) -> str:
+    def _attrs(self, attrs: list[tuple[str, str | None]], tag: str = "") -> str:
         rendered = []
         for name, value in attrs:
             lower = name.lower()
             if lower.startswith("on"):
+                continue
+            if lower in {"autoplay", "data-crt-video", "data-crt-options"}:
                 continue
             if value is None:
                 rendered.append(lower)
@@ -1590,6 +1592,8 @@ class _RenderedPostFragment(HTMLParser):
             if lower in _FRAGMENT_REFERENCE_ATTRS:
                 if lower == "srcset":
                     value = _rebase_srcset(value, self.source_page, self.destination_page)
+                elif lower in {"src", "poster"} and tag in {"video", "source", "audio"} and (urlsplit(value).scheme or urlsplit(value).netloc or value.startswith("//")):
+                    pass
                 elif lower in {"src", "poster", "data"} and (urlsplit(value).scheme or urlsplit(value).netloc or value.startswith("//")):
                     continue
                 elif lower == "href" and value.strip().lower().startswith("javascript:"):
@@ -1636,11 +1640,11 @@ class _RenderedPostFragment(HTMLParser):
             return
         if lower == "article":
             self.article_depth += 1
-        self.parts.append("<" + lower + self._attrs(attrs) + ">")
+        self.parts.append("<" + lower + self._attrs(attrs, lower) + ">")
 
     def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if self._in_fragment() and not self.skip_depth and not self.skip_header_depth:
-            self.parts.append("<" + tag.lower() + self._attrs(attrs) + "/>")
+            self.parts.append("<" + tag.lower() + self._attrs(attrs, tag.lower()) + "/>" )
 
     def handle_endtag(self, tag: str) -> None:
         lower = tag.lower()

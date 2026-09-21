@@ -226,6 +226,7 @@ class PresentationTests(unittest.TestCase):
                     '<article id="post-7"><header>discarded standalone metadata</header>'
                     '<p id="body-7"><a href="../media/source.html">link</a></p>'
                     '<img src="../media/image.png" srcset="../media/image.png 1x, https://example.invalid/x.png 2x">'
+                    '<video autoplay data-crt-video data-crt-options="{}" poster="https://media.example/poster.jpg"><source src="https://media.example/video.mp4" type="video/mp4"><source src="../media/local.mp4" type="video/mp4"></video>'
                     '<script>alert(1)</script><form action="../submit"><input></form>'
                     '<a href="#body-7" onclick="alert(1)">jump</a></article>',
                     encoding="utf-8",
@@ -245,7 +246,12 @@ class PresentationTests(unittest.TestCase):
                 rendered = main._render_post_card(record, destination)
                 self.assertIn('src="example/media/image.png"', rendered)
                 self.assertIn('srcset="example/media/image.png 1x"', rendered)
-                self.assertNotIn('src="https://', rendered)
+                self.assertNotIn('<img src="https://', rendered)
+                self.assertIn('<video poster="https://media.example/poster.jpg"', rendered)
+                self.assertIn('src="https://media.example/video.mp4"', rendered)
+                self.assertIn('src="example/media/local.mp4"', rendered)
+                self.assertNotIn("data-crt-video", rendered)
+                self.assertNotIn("autoplay", rendered)
                 self.assertNotIn("<script", rendered)
                 self.assertNotIn("<form", rendered)
                 self.assertNotIn("onclick", rendered)
