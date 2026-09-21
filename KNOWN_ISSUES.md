@@ -5,9 +5,11 @@ This is a stabilization note, not a release claim.
 ## Dependency and distribution
 
 This beta does not ship a `wheels/` directory. If the pinned dependencies are
-not already installed, the launcher performs an online pip bootstrap. It is
-therefore not an offline installer. A future release may add verified bundled
-wheels and matching third-party notices.
+not already installed, the launcher creates a project-local `.runtime/venv/`
+and performs an online pip bootstrap there. It is therefore not an offline
+installer and does not modify the operating system's Python environment. A
+future release may add verified bundled wheels and matching third-party
+notices.
 
 ## Core reentrancy
 

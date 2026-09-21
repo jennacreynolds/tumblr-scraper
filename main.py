@@ -1217,24 +1217,10 @@ def ensure_tumblr_backup() -> None:
     try:
         import tumblr_backup.main  # noqa: F401
         return
-    except ImportError:
-        pass
-
-    print("Installing tumblr-backup 1.0.7 (first run only)...")
-    cmd = [
-        sys.executable,
-        "-m",
-        "pip",
-        "install",
-        "tumblr-backup==1.0.7",
-        "urllib3>=2.2.2,<2.6",
-    ]
-    try:
-        subprocess.check_call(cmd)
-    except Exception as exc:
+    except ImportError as exc:
         raise RuntimeError(
-            "Could not install tumblr-backup automatically. "
-            "This Python app needs working pip support."
+            "tumblr-backup is not available in this Python environment. "
+            "Start Tumblr Scraper through a supported launcher or ./tumblr-scraper."
         ) from exc
 
 

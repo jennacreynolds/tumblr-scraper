@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -10,6 +11,7 @@ from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 LAUNCHER_FILES = (
+    "bootstrap.py",
     "Tumblr Scraper - Android.py",
     "Tumblr Scraper - Linux.desktop",
     "Tumblr-Scraper-Linux.sh",
@@ -37,6 +39,13 @@ class LauncherPortabilityTests(unittest.TestCase):
         self.environment = os.environ.copy()
         self.environment["BROWSER"] = "true"
         self.environment["PYTHONDONTWRITEBYTECODE"] = "1"
+        runtime_python = self.root / ".runtime" / "venv" / "bin" / "python"
+        runtime_python.parent.mkdir(parents=True)
+        runtime_python.symlink_to(Path(sys.executable).resolve())
+        (self.root / ".runtime" / "bootstrap-state.json").write_text(
+            '{"bootstrap_schema": 1, "requirements": ["tumblr-backup==1.0.7", "urllib3>=2.2.2,<2.6"]}\n',
+            encoding="utf-8",
+        )
 
     def tearDown(self) -> None:
         self.temp.cleanup()
@@ -114,7 +123,7 @@ class LauncherPortabilityTests(unittest.TestCase):
         self.assertIn("Tumblr-Scraper-Linux.sh", text)
         self.assertNotIn("Tumblr Scraper - Android.py", text)
 
-        command = 'exec "$(dirname -- "$1")/Tumblr-Scraper-Linux.sh"'
+        command = 'exec /bin/sh "$(dirname -- "$1")/Tumblr-Scraper-Linux.sh"'
         result = subprocess.run(
             ["/bin/sh", "-c", command, "desktop-bootstrap", str(desktop)],
             cwd=self.unrelated_cwd,
@@ -131,8 +140,22 @@ class LauncherPortabilityTests(unittest.TestCase):
         text = (self.root / "Tumblr Scraper - Windows.bat").read_text(encoding="utf-8")
         self.assertIn('set "PROJECT_ROOT=%~dp0"', text)
         self.assertIn('pushd "%PROJECT_ROOT%"', text)
-        self.assertIn('%PROJECT_ROOT%Tumblr Scraper - Android.py', text)
+        self.assertIn('%PROJECT_ROOT%bootstrap.py', text)
+        self.assertIn('where python3', text)
         self.assertNotIn('cd /d "%CD%"', text)
+
+    def test_cli_without_arguments_prints_friendly_usage(self) -> None:
+        result = subprocess.run(
+            [str(self.root / "tumblr-scraper")],
+            cwd=self.unrelated_cwd,
+            text=True,
+            capture_output=True,
+            env=self.environment,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("Tumblr Scraper CLI", result.stderr)
+        self.assertIn("./tumblr-scraper BLOG", result.stderr)
 
 
 if __name__ == "__main__":

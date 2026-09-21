@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 import webbrowser
@@ -16,12 +17,12 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 import main
+import bootstrap
 from bridge import LocalControlBridge, LocalControlRequestHandler
 
 
 ROOT = PROJECT_ROOT
 MAIN = PROJECT_ROOT / "main.py"
-WHEELS = PROJECT_ROOT / "wheels"
 
 
 def prompt_username() -> str:
@@ -140,30 +141,6 @@ def prompt_focus() -> str:
         if 1 <= index <= len(choices):
             return choices[index - 1]
         print("Please choose one of the displayed numbers.")
-
-
-def install_local_dependencies() -> bool:
-    try:
-        import tumblr_backup.main  # noqa: F401
-        return True
-    except ImportError:
-        pass
-
-    packages = ["tumblr-backup==1.0.7", "urllib3>=2.2.2,<2.6"]
-    if WHEELS.is_dir() and any(WHEELS.iterdir()):
-        print("\nFirst-time setup required.")
-        print("Installing required Tumblr archive components from bundled wheels...")
-        command = [sys.executable, "-m", "pip", "install", "--no-index", "--find-links", str(WHEELS), *packages]
-    else:
-        print("\nFirst run: installing required Tumblr archive components...")
-        print("This release needs internet access once to download pinned Python packages.")
-        command = [sys.executable, "-m", "pip", "install", *packages]
-    result = subprocess.run(command, check=False)
-    if result.returncode != 0:
-        print("Required Python packages could not be installed.")
-        print("Check Python/pip and internet access, then run the launcher again.")
-        return False
-    return True
 
 
 # Compatibility name for callers that only used the old server's quiet logger.
@@ -388,8 +365,8 @@ def run_browser_first(
 
 def main_entry() -> int:
     print("TUMBLR SCRAPER\n")
-    if not install_local_dependencies():
-        return 1
+    if os.environ.get(bootstrap.BOOTSTRAP_ACTIVE) != "1":
+        return bootstrap.launch("browser", pydroid=bootstrap.is_pydroid())
     return run_browser_first(main.CrawlerApplication())
 
 

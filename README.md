@@ -66,6 +66,14 @@ extracted folder and run `./Tumblr-Scraper-Linux.sh`. Some Linux file managers
 also require an executable/trusted permission before a `.desktop` file can be
 double-clicked.
 
+The reliable terminal fallback is:
+
+    sh ./Tumblr-Scraper-Linux.sh
+
+Downloaded `.desktop` files may still need an explicit "Run" or trust action
+in KDE, GNOME, or another file manager. That is a file-manager security rule,
+not a different application path.
+
 When the launcher starts, it opens the archive in your normal browser and
 waits there for your instructions. Open the collapsed Crawler panel, then
 enter the Tumblr blog name, for example:
@@ -87,10 +95,25 @@ The application boundary and bridge contract are documented in ARCHITECTURE.md.
 
 FIRST-RUN DEPENDENCIES
 
-The release preserves tumblr-backup==1.0.7 and urllib3>=2.2.2,<2.6. If
-bundled wheels are not present, the launcher prints "First run: installing
-required Tumblr archive components..." and uses pip once with internet access.
+The release preserves `tumblr-backup==1.0.7` and `urllib3>=2.2.2,<2.6`. On
+desktop Linux, macOS, and Windows, the first launcher run creates a private
+`.runtime/venv/` beside the application and installs those packages there.
+The operating system's Python is used only to create that environment; it is
+never used as a pip installation target. Later launches reuse it after checking
+the dependency versions. A missing or interrupted environment is repaired
+locally. If bundled wheels are not present, first setup needs internet access.
 This is not a fully offline installer.
+
+For the command line, use the same bootstrap:
+
+    ./tumblr-scraper BLOG
+    ./tumblr-scraper BLOG 300 --context explore --context-depth 2
+
+`python3 tumblr-scraper BLOG ...` is equivalent. Running it with no arguments
+prints a short usage guide; `--help` shows the full crawler options. Do not
+use `pipx run` for the extracted project: it does not know this project's
+private runtime and can encounter the externally managed Python restriction
+on distributions such as Arch Linux.
 
 DEVELOPMENT TESTING
 

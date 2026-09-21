@@ -11,7 +11,7 @@ cd "$PROJECT_ROOT" || exit 1
 
 status=0
 if command -v python3 >/dev/null 2>&1; then
-    python3 "$PROJECT_ROOT/Tumblr Scraper - Android.py"
+    python3 "$PROJECT_ROOT/bootstrap.py" browser
     status=$?
 else
     echo "Python 3 was not found. Install Python 3 and try again."

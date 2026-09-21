@@ -3,4 +3,4 @@ Type=Application
 Name=Tumblr Scraper - Linux
 Comment=Start Tumblr-Scraper and open its browser interface
 Terminal=true
-Exec=/bin/sh -c "exec \"\\$(dirname -- \"\\$1\")/Tumblr-Scraper-Linux.sh\"" sh %k
+Exec=/bin/sh -c "exec /bin/sh \"\\$(dirname -- \"\\$1\")/Tumblr-Scraper-Linux.sh\"" sh %k

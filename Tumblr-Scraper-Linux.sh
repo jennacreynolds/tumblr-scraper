@@ -22,4 +22,4 @@ if ! command -v python3 >/dev/null 2>&1; then
     exit 1
 fi
 
-exec python3 "$PROJECT_ROOT/Tumblr Scraper - Android.py"
+exec python3 "$PROJECT_ROOT/bootstrap.py" browser

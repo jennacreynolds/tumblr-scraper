@@ -44,6 +44,13 @@ If the file manager does not launch desktop files, open a terminal in the
 extracted folder and run ./Tumblr-Scraper-Linux.sh. Some Linux file managers
 also require executable/trusted permission for a .desktop file.
 
+The reliable terminal fallback is:
+
+    sh ./Tumblr-Scraper-Linux.sh
+
+Downloaded .desktop files may need an explicit Run or trust action in KDE,
+GNOME, or another file manager.
+
 When the launcher starts, it opens the archive in your normal browser and
 waits there for your instructions. Open the collapsed Crawler panel, then
 enter the Tumblr blog name, for example:
@@ -59,6 +66,22 @@ also available later at Backups/index.html. Reading does not require Python,
 Tumblr, or a localhost server.
 
 The application boundary and bridge contract are documented in ARCHITECTURE.md.
+
+FIRST-RUN DEPENDENCIES
+
+Desktop launchers create a private .runtime/venv beside the application and
+install tumblr-backup==1.0.7 and urllib3>=2.2.2,<2.6 there. The operating
+system Python is only used to create that environment, never as a pip target.
+If bundled wheels are absent, first setup needs internet access. This is not a
+fully offline installer.
+
+CLI:
+
+    ./tumblr-scraper BLOG
+    ./tumblr-scraper BLOG 300 --context explore --context-depth 2
+
+python3 tumblr-scraper BLOG ... is equivalent. No arguments prints usage and
+--help shows the full options. Do not use pipx run for the extracted project.
 
 
 

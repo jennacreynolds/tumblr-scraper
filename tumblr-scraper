@@ -1,9 +1,35 @@
 #!/usr/bin/env python3
-"""Launch the scraper from this file's directory."""
+"""Launch the scraper CLI through the shared project runtime."""
 
+import sys
 from pathlib import Path
-import runpy
+
+PROJECT_ROOT = Path(__file__).resolve().parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+import bootstrap
+
+
+def _friendly_usage() -> str:
+    return (
+        "Tumblr Scraper CLI\n\n"
+        "Usage:\n"
+        "  ./tumblr-scraper BLOG\n"
+        "  ./tumblr-scraper BLOG MAX_POSTS [options]\n\n"
+        "Example:\n"
+        "  ./tumblr-scraper gobershmat 300 --context explore --context-depth 2\n\n"
+        "For the browser interface, run your platform launcher.\n"
+        "For full options: ./tumblr-scraper --help\n"
+    )
 
 
 if __name__ == "__main__":
-    runpy.run_path(str(Path(__file__).resolve().with_name("main.py")), run_name="__main__")
+    if len(sys.argv) == 1:
+        print(_friendly_usage(), file=sys.stderr)
+        raise SystemExit(2)
+    try:
+        raise SystemExit(bootstrap.launch("cli", sys.argv[1:]))
+    except bootstrap.BootstrapError as exc:
+        print(f"Bootstrap failed: {exc}", file=sys.stderr)
+        raise SystemExit(1)
