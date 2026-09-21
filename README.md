@@ -61,6 +61,11 @@ LINUX
 2. Open the Tumblr-Scraper folder.
 3. Double-click Tumblr Scraper - Linux.desktop.
 
+If your file manager does not launch desktop files, open a terminal in the
+extracted folder and run `./Tumblr-Scraper-Linux.sh`. Some Linux file managers
+also require an executable/trusted permission before a `.desktop` file can be
+double-clicked.
+
 When the launcher starts, it opens the archive in your normal browser and
 waits there for your instructions. Open the collapsed Crawler panel, then
 enter the Tumblr blog name, for example:
@@ -74,6 +79,9 @@ Press Start crawl in the browser. The terminal remains available as a
 fallback, but normal use does not require terminal prompts. The archive is
 also available later at Backups/index.html. Reading does not require Python,
 Tumblr, or a localhost server.
+
+All launchers locate the project from their own file location. They do not
+require the terminal's current directory to be the extracted project folder.
 
 The application boundary and bridge contract are documented in ARCHITECTURE.md.
 
@@ -178,4 +186,3 @@ https://www.blosxom.com
 
 Your blog always, always belonged to you,
 not the owners of the servers who host it.
-

@@ -1,7 +1,6 @@
-#!/usr/bin/env xdg-open
 [Desktop Entry]
 Type=Application
 Name=Tumblr Scraper - Linux
 Comment=Start Tumblr-Scraper and open its browser interface
 Terminal=true
-Exec=sh -c "cd \"\\$(dirname \"\\$1\")\" && exec python3 \"Tumblr Scraper - Android.py\"" sh %k
+Exec=/bin/sh -c "exec \"\\$(dirname -- \"\\$1\")/Tumblr-Scraper-Linux.sh\"" sh %k

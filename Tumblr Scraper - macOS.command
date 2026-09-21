@@ -1,10 +1,17 @@
 #!/bin/sh
 
-cd "$(dirname "$0")" || exit 1
+PROJECT_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" 2>/dev/null && pwd -P) || {
+    printf 'Tumblr Scraper: could not locate the launcher directory.\n' >&2
+    printf 'Press Enter to close this terminal. '
+    read -r _ || true
+    exit 1
+}
+
+cd "$PROJECT_ROOT" || exit 1
 
 status=0
 if command -v python3 >/dev/null 2>&1; then
-    python3 "Tumblr Scraper - Android.py"
+    python3 "$PROJECT_ROOT/Tumblr Scraper - Android.py"
     status=$?
 else
     echo "Python 3 was not found. Install Python 3 and try again."

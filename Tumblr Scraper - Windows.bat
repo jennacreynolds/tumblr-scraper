@@ -1,6 +1,12 @@
 @echo off
 setlocal
-cd /d "%~dp0"
+set "PROJECT_ROOT=%~dp0"
+pushd "%PROJECT_ROOT%" >nul 2>&1
+if errorlevel 1 (
+    echo Tumblr Scraper could not enter "%PROJECT_ROOT%".
+    set "status=1"
+    goto finish
+)
 
 where py >nul 2>&1
 if not errorlevel 1 goto use_py_launcher
@@ -14,12 +20,12 @@ set "status=1"
 goto finish
 
 :use_py_launcher
-py -3 "Tumblr Scraper - Android.py"
+py -3 "%PROJECT_ROOT%Tumblr Scraper - Android.py"
 set "status=%errorlevel%"
 goto finish
 
 :use_python_launcher
-python "Tumblr Scraper - Android.py"
+python "%PROJECT_ROOT%Tumblr Scraper - Android.py"
 set "status=%errorlevel%"
 goto finish
 
@@ -27,5 +33,6 @@ goto finish
 echo.
 if not "%status%"=="0" echo The launcher exited with status %status%.
 echo Saved work is not removed by a launcher failure.
+popd >nul 2>&1
 pause
 exit /b %status%

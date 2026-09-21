@@ -1,0 +1,139 @@
+from __future__ import annotations
+
+import os
+import shutil
+import subprocess
+import tempfile
+import unittest
+from pathlib import Path
+
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+LAUNCHER_FILES = (
+    "Tumblr Scraper - Android.py",
+    "Tumblr Scraper - Linux.desktop",
+    "Tumblr-Scraper-Linux.sh",
+    "Tumblr Scraper - macOS.command",
+    "Tumblr Scraper - Windows.bat",
+    "tumblr-scraper",
+    "main.py",
+    "global.css",
+    "network-policy.json",
+    "context-policy.json",
+)
+
+
+class LauncherPortabilityTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory(prefix="launcher acceptance ")
+        self.root = Path(self.temp.name) / "Tumblr Scraper Beta Test"
+        self.root.mkdir(parents=True)
+        for name in LAUNCHER_FILES:
+            shutil.copy2(REPOSITORY_ROOT / name, self.root / name)
+        shutil.copytree(REPOSITORY_ROOT / "assets", self.root / "assets")
+        shutil.copytree(REPOSITORY_ROOT / "bridge", self.root / "bridge")
+        self.unrelated_cwd = Path(self.temp.name) / "unrelated cwd"
+        self.unrelated_cwd.mkdir()
+        self.environment = os.environ.copy()
+        self.environment["BROWSER"] = "true"
+        self.environment["PYTHONDONTWRITEBYTECODE"] = "1"
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+
+    def run_launcher(self, command: list[str], *, timeout: float = 20.0) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            command,
+            cwd=self.unrelated_cwd,
+            input="\n",
+            text=True,
+            capture_output=True,
+            env=self.environment,
+            timeout=timeout,
+            check=False,
+        )
+
+    def test_python_authority_uses_file_root_from_unrelated_cwd(self) -> None:
+        probe = (
+            "import main; "
+            "print(main.PROJECT_ROOT); "
+            "print(main.NETWORK_POLICY_FILE); "
+            "print(main.SOURCE_ASSET_DIR)"
+        )
+        result = subprocess.run(
+            ["python3", "-c", probe],
+            cwd=self.unrelated_cwd,
+            env={**self.environment, "PYTHONPATH": str(self.root)},
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.splitlines(), [
+            str(self.root),
+            str(self.root / "network-policy.json"),
+            str(self.root / "assets"),
+        ])
+
+    def test_android_python_launcher_starts_from_unrelated_cwd(self) -> None:
+        result = self.run_launcher(["python3", str(self.root / "Tumblr Scraper - Android.py")])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Tumblr-Scraper is ready.", result.stdout)
+        self.assertTrue((self.root / "Backups" / "index.html").is_file())
+        self.assertFalse((self.unrelated_cwd / "Backups").exists())
+
+    def test_linux_wrapper_starts_from_unrelated_cwd(self) -> None:
+        result = self.run_launcher([str(self.root / "Tumblr-Scraper-Linux.sh")])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Tumblr-Scraper is ready.", result.stdout)
+        self.assertTrue((self.root / "Backups" / "index.html").is_file())
+
+    def test_macos_wrapper_starts_from_unrelated_cwd(self) -> None:
+        result = self.run_launcher([str(self.root / "Tumblr Scraper - macOS.command")])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Tumblr-Scraper is ready.", result.stdout)
+        self.assertTrue((self.root / "Backups" / "index.html").is_file())
+
+    def test_cli_wrapper_uses_its_own_main_file(self) -> None:
+        result = subprocess.run(
+            [str(self.root / "tumblr-scraper"), "--help"],
+            cwd=self.unrelated_cwd,
+            text=True,
+            capture_output=True,
+            env=self.environment,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("usage: tumblr-scraper", result.stdout)
+
+    def test_desktop_entry_bootstrap_uses_percent_k_as_shell_argument(self) -> None:
+        desktop = self.root / "Tumblr Scraper - Linux.desktop"
+        text = desktop.read_text(encoding="utf-8")
+        self.assertFalse(text.startswith("#!"))
+        self.assertIn("sh %k", text)
+        self.assertIn("Tumblr-Scraper-Linux.sh", text)
+        self.assertNotIn("Tumblr Scraper - Android.py", text)
+
+        command = 'exec "$(dirname -- "$1")/Tumblr-Scraper-Linux.sh"'
+        result = subprocess.run(
+            ["/bin/sh", "-c", command, "desktop-bootstrap", str(desktop)],
+            cwd=self.unrelated_cwd,
+            input="\n",
+            text=True,
+            capture_output=True,
+            env=self.environment,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Tumblr-Scraper is ready.", result.stdout)
+
+    def test_windows_launcher_uses_script_directory(self) -> None:
+        text = (self.root / "Tumblr Scraper - Windows.bat").read_text(encoding="utf-8")
+        self.assertIn('set "PROJECT_ROOT=%~dp0"', text)
+        self.assertIn('pushd "%PROJECT_ROOT%"', text)
+        self.assertIn('%PROJECT_ROOT%Tumblr Scraper - Android.py', text)
+        self.assertNotIn('cd /d "%CD%"', text)
+
+
+if __name__ == "__main__":
+    unittest.main()

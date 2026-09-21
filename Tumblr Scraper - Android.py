@@ -9,13 +9,19 @@ import sys
 import webbrowser
 from pathlib import Path
 
+# Resolve the project before importing sibling modules. Pydroid and file
+# managers may choose an unrelated current working directory.
+PROJECT_ROOT = Path(__file__).resolve().parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 import main
 from bridge import LocalControlBridge, LocalControlRequestHandler
 
 
-ROOT = Path(__file__).resolve().parent
-MAIN = ROOT / "main.py"
-WHEELS = ROOT / "wheels"
+ROOT = PROJECT_ROOT
+MAIN = PROJECT_ROOT / "main.py"
+WHEELS = PROJECT_ROOT / "wheels"
 
 
 def prompt_username() -> str:

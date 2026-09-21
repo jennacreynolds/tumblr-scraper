@@ -54,15 +54,17 @@ try:
 except ImportError:  # pragma: no cover - unavailable on POSIX
     msvcrt = None
 
-BASE_DIR = Path(__file__).resolve().parent
-BACKUPS_DIR = BASE_DIR / "Backups"
-GLOBAL_CSS = BASE_DIR / "global.css"
-SOURCE_ASSET_DIR = BASE_DIR / "assets"
+PROJECT_ROOT = Path(__file__).resolve().parent
+# Compatibility alias for callers which imported the old name.
+BASE_DIR = PROJECT_ROOT
+BACKUPS_DIR = PROJECT_ROOT / "Backups"
+GLOBAL_CSS = PROJECT_ROOT / "global.css"
+SOURCE_ASSET_DIR = PROJECT_ROOT / "assets"
 SOURCE_ARCHIVE_CSS = SOURCE_ASSET_DIR / "archive.css"
 SOURCE_ARCHIVE_JS = SOURCE_ASSET_DIR / "archive.js"
-NETWORK_POLICY_FILE = BASE_DIR / "network-policy.json"
-CONTEXT_POLICY_FILE = BASE_DIR / "context-policy.json"
-NEIGHBORHOODS_DIR = BASE_DIR / "Neighborhoods"
+NETWORK_POLICY_FILE = PROJECT_ROOT / "network-policy.json"
+CONTEXT_POLICY_FILE = PROJECT_ROOT / "context-policy.json"
+NEIGHBORHOODS_DIR = PROJECT_ROOT / "Neighborhoods"
 BLOG = ""
 BLOG_HOST = ""
 OUT = Path()

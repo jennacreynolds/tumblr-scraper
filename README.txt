@@ -40,6 +40,10 @@ LINUX
 2. Open the Tumblr-Scraper folder.
 3. Double-click Tumblr Scraper - Linux.desktop.
 
+If the file manager does not launch desktop files, open a terminal in the
+extracted folder and run ./Tumblr-Scraper-Linux.sh. Some Linux file managers
+also require executable/trusted permission for a .desktop file.
+
 When the launcher starts, it opens the archive in your normal browser and
 waits there for your instructions. Open the collapsed Crawler panel, then
 enter the Tumblr blog name, for example:
