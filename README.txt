@@ -5,7 +5,9 @@
 
 TUMBLR SCRAPER
 
-This makes a local backup of a public Tumblr blog.
+This is an early-beta local Tumblr archiver for a public target blog and its
+bounded surrounding public neighborhood. Read README.md for the current quick
+start, platform launchers, dependency setup, and limitations.
 
 It does not need a Tumblr login, account, API key, or upload to a server.
 

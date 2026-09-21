@@ -232,6 +232,29 @@ class PresentationTests(unittest.TestCase):
             finally:
                 main.BACKUPS_DIR = old_backups
 
+    def test_participant_avatar_is_cached_without_creating_archive(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            old_backups = main.BACKUPS_DIR
+            main.BACKUPS_DIR = Path(directory) / "Backups"
+            response = mock.MagicMock()
+            response.__enter__.return_value = response
+            response.headers = {"Content-Type": "image/jpeg"}
+            response.read.return_value = b"low-resolution-avatar"
+            try:
+                with mock.patch.object(main, "urlopen", return_value=response) as opened:
+                    self.assertTrue(main.capture_participant_avatar("Participant"))
+                    self.assertFalse(main.capture_participant_avatar("Participant"))
+                avatar = main.BACKUPS_DIR / "participant-assets" / "participant" / "avatar.jpg"
+                self.assertEqual(avatar.read_bytes(), b"low-resolution-avatar")
+                self.assertFalse((main.BACKUPS_DIR / "participant").exists())
+                self.assertEqual(opened.call_count, 1)
+                self.assertEqual(
+                    main._participant_avatar("participant", main.BACKUPS_DIR / "dashboard.html"),
+                    "participant-assets/participant/avatar.jpg",
+                )
+            finally:
+                main.BACKUPS_DIR = old_backups
+
     def test_global_catalog_orders_blogs_by_local_post_count(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             old_backups = main.BACKUPS_DIR
@@ -798,13 +821,16 @@ class ContextTests(unittest.TestCase):
                 for page in pages:
                     self.assertTrue(page.is_file(), page)
                     text = page.read_text(encoding="utf-8")
-                    self.assertIn("class=\"archive-nav\"", text)
                     self.assertIn("class=\"archive-chrome\"", text)
-                    self.assertIn('id="crawler-controls"', text)
-                    self.assertIn("Start crawl", text)
-                    self.assertIn("class=\"reader-settings\"", text)
-                    self.assertEqual(text.count('class="reader-setting"'), 3)
-                    self.assertIn('type="range"', text)
+                    self.assertIn('class="app-menu-toggle"', text)
+                    self.assertIn('id="app-drawer"', text)
+                    self.assertIn('class="app-drawer-backdrop" data-drawer-close hidden', text)
+                    self.assertIn('class="app-drawer" aria-label="Application menu" aria-hidden="true" hidden', text)
+                    self.assertIn('</header><div class="app-drawer-layer">', text)
+                    self.assertEqual(text.count('class="app-header"'), 1)
+                    self.assertIn('aria-current="page"', text)
+                    self.assertNotIn('id="crawler-controls"', text)
+                    self.assertNotIn('class="reader-settings settings-page"', text)
                     self.assertIn("puppet_reader", (main.BACKUPS_DIR / "assets" / "archive.js").read_text(encoding="utf-8"))
                     for ref in re.findall(r'(?:href|src)="([^"]+)"', text):
                         parsed = urlsplit(ref)
@@ -815,10 +841,27 @@ class ContextTests(unittest.TestCase):
                             target = (page.parent / parsed.path).resolve()
                             self.assertTrue(target.is_file(), (page, ref, target))
 
+                crawler_page = (main.BACKUPS_DIR / "crawler.html").read_text(encoding="utf-8")
+                self.assertIn('id="crawler-controls"', crawler_page)
+                self.assertIn("Start crawl", crawler_page)
+                settings_page = (main.BACKUPS_DIR / "settings.html").read_text(encoding="utf-8")
+                self.assertIn('class="reader-settings settings-page"', settings_page)
+                self.assertEqual(settings_page.count('class="reader-setting"'), 3)
+                self.assertIn('type="range"', settings_page)
+
                 archive_js = (main.BACKUPS_DIR / "assets" / "archive.js").read_text(encoding="utf-8")
                 self.assertNotRegex(archive_js, r"\b(?:XMLHttpRequest)\b")
                 self.assertIn("__crawler/bootstrap", archive_js)
+                self.assertIn("function setClosedState()", archive_js)
+                self.assertIn("drawer.setAttribute('aria-hidden', 'true')", archive_js)
+                self.assertIn("setClosedState();", archive_js)
+                archive_css = (main.BACKUPS_DIR / "assets" / "archive.css").read_text(encoding="utf-8")
+                self.assertIn('.app-drawer-backdrop[hidden], .app-drawer[hidden] { display: none !important; }', archive_css)
+                self.assertIn('inset-inline-start: 0', archive_css)
+                self.assertIn('.app-drawer:dir(rtl)', archive_css)
                 self.assertIn("location.hostname", archive_js)
+                self.assertIn("startDrawer", archive_js)
+                self.assertIn("inset-inline-start", (main.SOURCE_ARCHIVE_CSS).read_text(encoding="utf-8"))
 
                 post = (main.BACKUPS_DIR / "target" / "posts" / "1.html").read_text(encoding="utf-8")
                 self.assertIn("../tags/", post)

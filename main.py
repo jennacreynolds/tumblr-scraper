@@ -20,6 +20,7 @@ from datetime import timezone
 from email.utils import parsedate_to_datetime
 import json
 import math
+import mimetypes
 import os
 import random
 import re
@@ -68,6 +69,7 @@ OUT = Path()
 JSON_DIR = Path()
 PAGE_SIZE = 50
 PRESENTATION_PAGE_SIZE = 30
+PRESENTATION_SCHEMA_VERSION = 2
 MAX_POSTS = 300
 PROCESS_BATCH = 25
 FULL_RES = False
@@ -77,6 +79,7 @@ ACTIVE_STATUS: CrawlerStatus | None = None
 ACTIVE_LIFECYCLE = "stopped"
 ACTIVE_PROGRESS_RENDERER: Any = None
 ACTIVE_PRESENTATION_GENERATION = 0
+PENDING_CANCEL_EVENT = threading.Event()
 RUNTIME_LOCK = threading.RLock()
 HOST_CAPABILITIES = {"compact_terminal": False, "keyboard_controls": True}
 VERBOSE = False
@@ -1113,6 +1116,7 @@ def process_batch(ids: list[int]) -> int:
             "tumblr-backup returned without producing HTML for: "
             + ", ".join(str(pid) for pid in missing)
         )
+    capture_participant_avatars(ids)
     return len(ids)
 
 
@@ -1452,7 +1456,11 @@ def _presentation_is_dirty() -> bool:
     if not path.is_file():
         return True
     try:
-        return bool(json.loads(path.read_text(encoding="utf-8")).get("dirty"))
+        state = json.loads(path.read_text(encoding="utf-8"))
+        return (
+            bool(state.get("dirty"))
+            or state.get("generator_version") != PRESENTATION_SCHEMA_VERSION
+        )
     except (OSError, json.JSONDecodeError, AttributeError):
         return True
 
@@ -1460,6 +1468,7 @@ def _presentation_is_dirty() -> bool:
 def mark_presentation_dirty(reason: str = "canonical data changed") -> None:
     BACKUPS_DIR.mkdir(parents=True, exist_ok=True)
     write_json_atomic(_presentation_state_path(), {
+        "generator_version": PRESENTATION_SCHEMA_VERSION,
         "dirty": True,
         "reason": reason,
         "updated_at": time.time(),
@@ -1530,14 +1539,6 @@ def _shared_asset_paths() -> tuple[Path, Path]:
     return assets / "archive.css", assets / "archive.js"
 
 
-def _archive_nav(links: list[tuple[str, str]], active: str = "") -> str:
-    items = []
-    for label, href in links:
-        current = ' aria-current="page"' if label == active else ""
-        items.append(f'<a href="{escape(href)}"{current}>{escape(label)}</a>')
-    return '<nav class="archive-nav" aria-label="Primary">' + "".join(items) + "</nav>"
-
-
 def _archive_shell(
     title: str,
     content: str,
@@ -1548,21 +1549,75 @@ def _archive_shell(
     script: str = "assets/archive.js",
     extra: str = "",
 ) -> str:
+    app_prefix = _application_prefix(links)
     return (
         '<!doctype html><html lang="en" dir="auto"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
         f"<title>{escape(title)}</title>"
         f'<link rel="stylesheet" href="{escape(stylesheet)}">'
         f'<script defer src="{escape(script)}"></script>{extra}</head><body>'
-        + '<!-- puppetbackup-shared-shell-v3 -->'
-        + '<header class="archive-chrome">'
-        + _reader_controls()
-        + _crawler_controls()
-        + _archive_nav(links, active)
-        + '</header>'
+        + _application_chrome(links, active)
         + '<main class="reader-content">'
         + content
         + "</main></body></html>"
+    )
+
+
+def _application_chrome(links: list[tuple[str, str]], active: str = "") -> str:
+    app_prefix = _application_prefix(links)
+    return (
+        '<!-- puppetbackup-shared-shell-v4 -->'
+        '<header class="archive-chrome">'
+        '<div class="app-header">'
+        '<button type="button" class="app-menu-toggle" aria-expanded="false" aria-controls="app-drawer" aria-label="Open menu"><span aria-hidden="true">&#9776;</span></button>'
+        f'<a class="app-title" href="{escape(app_prefix + "index.html")}">Tumblr Archive</a>'
+        f'<a class="app-crawl-status" id="crawler-header-status" href="{escape(app_prefix + "crawler.html")}" aria-label="Crawler status: Idle">Idle</a>'
+        '</div>'
+        + '</header>'
+        + _application_drawer(app_prefix, active, dict(links))
+    )
+
+
+def _application_prefix(links: list[tuple[str, str]]) -> str:
+    blogs_href = dict(links).get("Blogs", "index.html")
+    if blogs_href.endswith("Backups/index.html"):
+        return blogs_href[: -len("index.html")]
+    if blogs_href.endswith("index.html"):
+        return blogs_href[: -len("index.html")]
+    return ""
+
+
+def _application_drawer(prefix: str, active: str, link_map: dict[str, str]) -> str:
+    current = active if active in {"Blogs", "Dashboard", "Tags", "Neighborhoods", "Crawler", "Settings"} else "Blogs"
+    if active == "Blog tags":
+        current = "Tags"
+    archive = [
+        ("Blogs", link_map.get("Blogs", f"{prefix}index.html")),
+        ("Dashboard", link_map.get("Dashboard", f"{prefix}dashboard.html")),
+        ("Tags", link_map.get("Tags", f"{prefix}tags/index.html")),
+        ("Neighborhoods", link_map.get("Neighborhoods", f"{prefix}Neighborhoods/index.html")),
+    ]
+
+    def render_links(items: list[tuple[str, str]]) -> str:
+        rendered = []
+        for label, href in items:
+            marker = ' aria-current="page"' if label == current else ""
+            rendered.append(f'<a href="{escape(href)}"{marker}>{escape(label)}</a>')
+        return "".join(rendered)
+
+    return (
+        '<div class="app-drawer-layer">'
+        '<div class="app-drawer-backdrop" data-drawer-close hidden></div>'
+        '<nav id="app-drawer" class="app-drawer" aria-label="Application menu" aria-hidden="true" hidden>'
+        '<div class="app-drawer-header">'
+        f'<a class="app-drawer-title" href="{escape(prefix + "index.html")}">Tumblr Archive</a>'
+        '<button type="button" class="app-drawer-close" data-drawer-close aria-label="Close menu">&#10005;</button>'
+        '</div>'
+        '<section class="app-nav-group"><h2>Archive</h2>' + render_links(archive) + '</section>'
+        '<section class="app-nav-group"><h2>Tools</h2>' + render_links([("Crawler", f"{prefix}crawler.html")]) + '</section>'
+        '<section class="app-nav-group"><h2>Settings</h2>' + render_links([("Settings", f"{prefix}settings.html")]) + '</section>'
+        f'<p class="app-drawer-status">Crawler: <a href="{escape(prefix + "crawler.html")}" id="crawler-drawer-status">Idle</a></p>'
+        '</nav></div>'
     )
 
 
@@ -1664,24 +1719,29 @@ def ensure_shared_archive_assets() -> None:
         shutil.copy2(SOURCE_ARCHIVE_JS, js)
 
 
-def _reader_controls() -> str:
+def _reader_controls(*, page: bool = False) -> str:
+    opening = '<section class="reader-settings settings-page">' if page else '<details class="reader-settings">'
+    heading = '<h1>Settings</h1><h2>Reader settings</h2>' if page else '<summary>Reader settings</summary>'
+    closing = '</section>' if page else '</details>'
     return (
-        '<details class="reader-settings"><summary>Reader settings</summary>'
-        '<form class="reader-settings-panel" aria-label="Reader settings">'
+        opening + heading
+        + '<form class="reader-settings-panel" aria-label="Reader settings">'
         '<div class="reader-setting"><label for="reader-size">Text size <output id="reader-size-value" for="reader-size">1.08rem</output></label>'
         '<input id="reader-size" type="range" min="0.9" max="1.8" step="0.05" value="1.08" data-reader-setting="size" data-unit="rem"></div>'
         '<div class="reader-setting"><label for="reader-leading">Line spacing <output id="reader-leading-value" for="reader-leading">1.58</output></label>'
         '<input id="reader-leading" type="range" min="1.2" max="2.2" step="0.05" value="1.58" data-reader-setting="leading"></div>'
         '<div class="reader-setting"><label for="reader-width">Content width <output id="reader-width-value" for="reader-width">52rem</output></label>'
-        '<input id="reader-width" type="range" min="30" max="80" step="2" value="52" data-reader-setting="width" data-unit="rem"></div></form></details>'
+        '<input id="reader-width" type="range" min="30" max="80" step="2" value="52" data-reader-setting="width" data-unit="rem"></div></form>' + closing
     )
 
 
-def _crawler_controls() -> str:
+def _crawler_controls(*, page: bool = False) -> str:
+    opening = '<section id="crawler-controls" class="crawler-controls crawler-page">' if page else '<div id="crawler-controls" class="crawler-controls" hidden>'
+    heading = '<h1>Crawler</h1>' if page else ''
+    closing = '</section>' if page else '</div>'
     return (
-        '<details id="crawler-controls" class="crawler-controls" hidden>'
-        '<summary>Crawler</summary>'
-        '<p id="crawler-status" class="crawler-status" aria-live="polite">Checking local crawler...</p>'
+        opening + heading
+        + '<p id="crawler-status" class="crawler-status" aria-live="polite">Checking local crawler...</p>'
         '<div class="crawler-setup">'
         '<div class="crawler-setting"><label for="crawler-target">Target blog</label><input id="crawler-target" type="text" autocomplete="off"></div>'
         '<div class="crawler-setting"><label for="crawler-max-posts">Maximum new posts</label><input id="crawler-max-posts" type="number" min="0" value="300"></div>'
@@ -1719,7 +1779,7 @@ def _crawler_controls() -> str:
         '<button type="button" class="crawler-start">Start crawl</button>'
         '<button type="button" class="crawler-stop" data-crawler-stop hidden>Stop safely</button>'
         '<button type="button" data-crawler-refresh hidden>Refresh archive</button>'
-        '</div></div><p id="crawler-error" class="crawler-error" role="alert" hidden></p></details>'
+        '</div></div><p id="crawler-error" class="crawler-error" role="alert" hidden></p>' + closing
     )
 
 
@@ -2080,9 +2140,94 @@ def _participant_avatar(name: str, destination_page: Path) -> str | None:
         local_root = canonical_archive_root(name)
     except ValueError:
         return None
-    if not (local_root / "json").is_dir():
+    if (local_root / "json").is_dir():
+        local_avatar = _local_profile_avatar(name, destination_page)
+        if local_avatar:
+            return local_avatar
+    assets = sorted((_participant_avatar_asset_dir(name)).glob("avatar.*"))
+    if not assets:
         return None
-    return _local_profile_avatar(name, destination_page)
+    return os.path.relpath(assets[0], destination_page.parent).replace(os.sep, "/")
+
+
+def _participant_avatar_asset_dir(name: str) -> Path:
+    return BACKUPS_DIR / "participant-assets" / canonical_blog_name(name)
+
+
+def _participant_avatar_exists(name: str) -> bool:
+    canonical = canonical_blog_name(name)
+    local_root = canonical_archive_root(canonical)
+    return bool(
+        (local_root / "json").is_dir() and _local_profile_avatar(canonical, local_root / "index.html")
+    ) or bool(list(_participant_avatar_asset_dir(canonical).glob("avatar.*")))
+
+
+def _save_participant_avatar(name: str, data: bytes, content_type: str) -> None:
+    media_type = content_type.split(";", 1)[0].strip().lower()
+    extension = {
+        "image/jpeg": ".jpg",
+        "image/png": ".png",
+        "image/gif": ".gif",
+        "image/webp": ".webp",
+    }.get(media_type) or mimetypes.guess_extension(media_type)
+    if extension not in {".jpg", ".jpeg", ".png", ".gif", ".webp"}:
+        raise ValueError("participant avatar response was not a supported image")
+    target = _participant_avatar_asset_dir(name) / ("avatar" + extension)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_suffix(target.suffix + ".tmp")
+    temporary.write_bytes(data)
+    os.replace(temporary, target)
+
+
+def capture_participant_avatar(name: str) -> bool:
+    """Cache one low-resolution participant avatar without creating an archive."""
+    try:
+        canonical = canonical_blog_name(name)
+        if _participant_avatar_exists(canonical):
+            return False
+        request = Request(
+            f"https://{canonical}.tumblr.com/avatar/64",
+            headers={"User-Agent": USER_AGENT},
+        )
+        with urlopen(request, timeout=3) as response:
+            content_type = str(response.headers.get("Content-Type", ""))
+            data = response.read(256 * 1024 + 1)
+        if len(data) > 256 * 1024:
+            raise ValueError("participant avatar exceeded 256 KiB")
+        _save_participant_avatar(canonical, data, content_type)
+        return True
+    except (OSError, HTTPError, URLError, ValueError):
+        return False
+
+
+def capture_participant_avatars(ids: list[int]) -> int:
+    """Collect at most 20 uncached trail avatars from one render batch."""
+    names: list[str] = []
+    seen: set[str] = set()
+    for pid in ids:
+        rendered = OUT / "posts" / f"{pid}.html"
+        if not rendered.is_file():
+            continue
+        try:
+            parser = _TrailMarkupParser()
+            parser.feed(rendered.read_text(encoding="utf-8"))
+            parser.close()
+            entries = _trail_entries(parser.root.children)
+        except (OSError, UnicodeError, AssertionError, ValueError):
+            continue
+        for name, _source_href, _content in entries:
+            try:
+                canonical = canonical_blog_name(name)
+            except ValueError:
+                continue
+            if canonical not in seen:
+                seen.add(canonical)
+                names.append(canonical)
+            if len(names) >= 20:
+                break
+        if len(names) >= 20:
+            break
+    return sum(capture_participant_avatar(name) for name in names)
 
 
 def _render_flat_reblog_trail(body: str, destination_page: Path) -> str:
@@ -2246,12 +2391,13 @@ def _inject_shared_assets(path: Path) -> None:
             text = re.sub(r"</head>", addition + "</head>", text, count=1, flags=re.I)
         else:
             text = addition + text
-    if "puppetbackup-shared-shell-v3" not in text:
+    if "puppetbackup-shared-shell-v4" not in text:
         text = text.replace("<!-- puppetbackup-shared-shell-v2 -->", "")
+        text = text.replace("<!-- puppetbackup-shared-shell-v3 -->", "")
         text = re.sub(r'<form class="reader-settings".*?</form>', "", text, count=1, flags=re.S)
         text = re.sub(r'<nav class="archive-nav".*?</nav>', "", text, count=1, flags=re.S)
         links, active = _page_chrome(path)
-        chrome = '<!-- puppetbackup-shared-shell-v3 --><header class="archive-chrome">' + _reader_controls() + _crawler_controls() + _archive_nav(links, active) + '</header>'
+        chrome = _application_chrome(links, active)
         body_match = re.search(r"<body\b[^>]*>", text, flags=re.I)
         if body_match:
             text = text[:body_match.end()] + chrome + text[body_match.end():]
@@ -2534,6 +2680,14 @@ def render_global_pages() -> None:
     blogs_content = '<h1>Blogs</h1><p>Locally preserved blog holdings.</p><label for="blog-search">Search blogs</label> <input id="blog-search" placeholder="Search blogs"><ul id="blog-list">' + "".join(blog_rows) + '</ul><script>document.getElementById("blog-search").addEventListener("input",function(){var q=this.value.toLowerCase();document.querySelectorAll("#blog-list li").forEach(function(x){x.hidden=x.textContent.toLowerCase().indexOf(q)<0;});});</script>'
     blogs_html = _archive_shell("Blogs", blogs_content, _global_nav(), active="Blogs")
     (BACKUPS_DIR / "index.html").write_text(blogs_html, encoding="utf-8")
+    (BACKUPS_DIR / "crawler.html").write_text(
+        _archive_shell("Crawler", _crawler_controls(page=True), _global_nav(), active="Crawler"),
+        encoding="utf-8",
+    )
+    (BACKUPS_DIR / "settings.html").write_text(
+        _archive_shell("Settings", _reader_controls(page=True), _global_nav(), active="Settings"),
+        encoding="utf-8",
+    )
 
     for blog, records in records_by_blog.items():
         (canonical_archive_root(blog) / "index.html").write_text(
@@ -2584,19 +2738,26 @@ def regenerate_global_presentation(force: bool = False) -> None:
     global ACTIVE_PRESENTATION_GENERATION
     state_path = _presentation_state_path()
     dirty = force or not (BACKUPS_DIR / "index.html").is_file() or not (BACKUPS_DIR / "dashboard.html").is_file()
+    dirty = dirty or not (BACKUPS_DIR / "crawler.html").is_file() or not (BACKUPS_DIR / "settings.html").is_file()
     dirty = dirty or not (BACKUPS_DIR / "tag-index.json").is_file() or not (BACKUPS_DIR / "tags" / "index.html").is_file()
     dirty = dirty or not (BACKUPS_DIR / "assets" / "archive.css").is_file()
     dirty = dirty or not (BACKUPS_DIR / "assets" / "archive.js").is_file()
     dirty = dirty or not (NEIGHBORHOODS_DIR / "index.html").is_file()
     if state_path.is_file():
         try:
-            dirty = dirty or bool(json.loads(state_path.read_text(encoding="utf-8")).get("dirty"))
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+            dirty = dirty or bool(state.get("dirty"))
+            dirty = dirty or state.get("generator_version") != PRESENTATION_SCHEMA_VERSION
         except (OSError, json.JSONDecodeError):
             dirty = True
     if not dirty:
         return
     render_global_pages()
-    write_json_atomic(state_path, {"dirty": False, "generated_at": time.time()})
+    write_json_atomic(state_path, {
+        "generator_version": PRESENTATION_SCHEMA_VERSION,
+        "dirty": False,
+        "generated_at": time.time(),
+    })
     ACTIVE_PRESENTATION_GENERATION += 1
 
 
@@ -3532,8 +3693,12 @@ def prepare_live_archive_entrypoint() -> None:
     """Create only the temporary first-run HTML entrypoint needed by a host."""
     BACKUPS_DIR.mkdir(parents=True, exist_ok=True)
     ensure_shared_archive_assets()
-    if not (BACKUPS_DIR / "index.html").is_file():
-        (BACKUPS_DIR / "index.html").write_text(
+    # Version and completeness checks cover old generated HTML, not just a
+    # first-run missing index. Canonical JSON/archive records are untouched.
+    regenerate_global_presentation()
+    index = BACKUPS_DIR / "index.html"
+    if not index.is_file():
+        index.write_text(
             _archive_shell(
                 "Tumblr archive",
                 "<h1>Preparing archive</h1><p>The crawler is starting. This page will become the archive as soon as the first presentation is saved.</p>",
@@ -3542,6 +3707,15 @@ def prepare_live_archive_entrypoint() -> None:
             ),
             encoding="utf-8",
         )
+    else:
+        # Existing archives can predate the browser-first control shell. Repair
+        # only the generated presentation; canonical archive data is untouched.
+        try:
+            current = index.read_text(encoding="utf-8")
+        except OSError:
+            current = ""
+        if 'id="crawler-target"' not in current or 'class="crawler-start"' not in current:
+            regenerate_global_presentation(force=True)
 
 
 class CrawlerApplication:
@@ -3553,11 +3727,13 @@ class CrawlerApplication:
         self.worker: threading.Thread | None = None
         self.last_request: CrawlRequest | None = None
         self.error = ""
+        self.cancel_requested = threading.Event()
         _set_lifecycle("idle")
 
     def snapshot(self) -> dict[str, Any]:
         with self.lock:
             snapshot = status_snapshot()
+            snapshot["cancel_requested"] = self.cancel_requested.is_set()
             snapshot.update({
                 "lifecycle": self.state,
                 "application_state": self.state,
@@ -3597,6 +3773,8 @@ class CrawlerApplication:
                 raise PolicyError("a crawl is already active")
             self.last_request = request
             self.error = ""
+            self.cancel_requested.clear()
+            PENDING_CANCEL_EVENT.clear()
             self.state = "starting"
             _set_lifecycle("starting")
             self.worker = threading.Thread(target=self._run, args=(request,), name="crawler-worker", daemon=True)
@@ -3605,16 +3783,23 @@ class CrawlerApplication:
 
     def stop(self) -> dict[str, Any]:
         with self.lock:
-            if self.state not in {"starting", "running"} or ACTIVE_RUNTIME is None:
+            if self.state not in {"starting", "running"}:
                 raise PolicyError("no active crawl to stop")
+            self.cancel_requested.set()
+            PENDING_CANCEL_EVENT.set()
             self.state = "stopping"
             _set_lifecycle("finalizing")
+            runtime = ACTIVE_RUNTIME
+            status = ACTIVE_STATUS
+        if runtime is None or status is None:
+            return self.snapshot()
         return apply_runtime_control("cancel_requested", True, source="browser")
 
     def _run(self, request: CrawlRequest) -> None:
         with self.lock:
-            self.state = "running"
-            _set_lifecycle("running")
+            if self.state == "starting":
+                self.state = "running"
+                _set_lifecycle("running")
         try:
             result = main(request.argv(), install_signal_handlers=False)
             with self.lock:
@@ -3627,6 +3812,8 @@ class CrawlerApplication:
                 self.state = "failed"
                 self.error = str(exc)
                 _set_lifecycle("failed")
+        finally:
+            PENDING_CANCEL_EVENT.clear()
 
 
 class ProgressRenderer:
@@ -3998,6 +4185,8 @@ def run_incremental_capture(
         budget_limit=max_posts,
         network_profile_id=str(NETWORK_PROFILE.get("id", "gentle")),
     )
+    if PENDING_CANCEL_EVENT.is_set():
+        runtime.update("cancel_requested", True, source="application")
     global ACTIVE_RUNTIME, ACTIVE_STATUS, ACTIVE_PROGRESS_RENDERER
     previous_sigint = signal.getsignal(signal.SIGINT) if install_signal_handlers else None
     if install_signal_handlers:

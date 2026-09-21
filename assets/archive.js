@@ -42,9 +42,76 @@
   function liveOrigin() {
     return location.protocol === 'http:' && (location.hostname === '127.0.0.1' || location.hostname === 'localhost');
   }
+  function startDrawer() {
+    var toggle = document.querySelector('.app-menu-toggle');
+    var drawer = document.getElementById('app-drawer');
+    var close = drawer ? drawer.querySelector('.app-drawer-close') : null;
+    var backdrop = document.querySelector('.app-drawer-backdrop');
+    if (!toggle || !drawer) return;
+    var lastFocus = toggle;
+    function setClosedState() {
+      drawer.hidden = true;
+      drawer.setAttribute('aria-hidden', 'true');
+      if (backdrop) backdrop.hidden = true;
+      toggle.setAttribute('aria-expanded', 'false');
+      document.body.classList.remove('drawer-open');
+    }
+    function closeDrawer() {
+      setClosedState();
+      lastFocus.focus();
+    }
+    function openDrawer() {
+      lastFocus = document.activeElement || toggle;
+      drawer.hidden = false;
+      drawer.setAttribute('aria-hidden', 'false');
+      if (backdrop) backdrop.hidden = false;
+      toggle.setAttribute('aria-expanded', 'true');
+      document.body.classList.add('drawer-open');
+      if (close) close.focus();
+      else {
+        var first = drawer.querySelector('a, button');
+        if (first) first.focus();
+      }
+    }
+    setClosedState();
+    toggle.addEventListener('click', function () {
+      if (drawer.hidden) openDrawer(); else closeDrawer();
+    });
+    if (close) close.addEventListener('click', closeDrawer);
+    if (backdrop) backdrop.addEventListener('click', closeDrawer);
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape' && !drawer.hidden) closeDrawer();
+    });
+  }
+  function renderHeaderStatus(status) {
+    var output = document.getElementById('crawler-header-status');
+    var drawerOutput = document.getElementById('crawler-drawer-status');
+    if (!output && !drawerOutput) return;
+    var lifecycle = status.lifecycle || 'idle';
+    var active = ['starting', 'running', 'stopping', 'finalizing'].indexOf(lifecycle) >= 0;
+    var text = lifecycle === 'idle' ? 'Idle' : lifecycle === 'complete' ? 'Complete' : lifecycle === 'failed' ? 'Error' : active ? ((status.budget_used || 0) + '/' + (status.budget_limit || '-') + ' saved') : lifecycle;
+    [output, drawerOutput].forEach(function (el) {
+      if (!el) return;
+      el.textContent = text;
+      el.setAttribute('aria-label', 'Crawler status: ' + text);
+    });
+  }
+  function startHeaderStatus() {
+    if (!liveOrigin() || !window.fetch) return;
+    function poll() {
+      fetch('/__crawler/status').then(function (response) {
+        if (!response.ok) throw new Error('status unavailable');
+        return response.json();
+      }).then(renderHeaderStatus).catch(function () {});
+    }
+    poll();
+    window.setInterval(poll, 1000);
+  }
   function crawlerText(status) {
+    var lifecycle = status.lifecycle || 'idle';
+    if (lifecycle === 'idle') return 'Idle';
     var limit = status.budget_limit || '-';
-    var action = status.current_action || status.lifecycle || 'Stopped';
+    var action = status.current_action || lifecycle || 'Stopped';
     var used = status.budget_used === undefined ? 0 : status.budget_used;
     return (status.target ? status.target + ' - ' : '') + action + ' - ' + used + '/' + limit + ' saved';
   }
@@ -73,7 +140,10 @@
       if (setup) setup.hidden = active;
       if (live) live.hidden = !active && state !== 'complete';
       if (startButton) startButton.hidden = active;
-      if (stopButton) stopButton.hidden = !active;
+      if (stopButton) {
+        stopButton.hidden = false;
+        stopButton.disabled = !active;
+      }
       if (status.error && errorOutput) { errorOutput.textContent = status.error; errorOutput.hidden = false; }
       if (status.request) {
         var request = status.request;
@@ -95,7 +165,7 @@
       var budget = document.getElementById('crawler-budget');
       var context = document.getElementById('crawler-context-multiplier');
       var affinity = document.getElementById('crawler-affinity');
-      if (budget) budget.textContent = (status.budget_used === undefined ? 0 : status.budget_used) + '/' + (status.budget_limit || '-');
+      if (budget) budget.textContent = active ? (status.budget_used === undefined ? 0 : status.budget_used) + '/' + (status.budget_limit || '-') : '-';
       if (context) context.textContent = (status.context_multiplier || 1).toFixed(2) + 'x';
       if (affinity) affinity.textContent = (status.relationship_multiplier || 1).toFixed(2) + 'x';
       panel.querySelectorAll('[data-crawler-control="focus"]').forEach(function (button) {
@@ -179,5 +249,7 @@
       }, 1000);
     }).catch(function () { panel.hidden = true; });
   }
+  startDrawer();
+  startHeaderStatus();
   startCrawlerControls();
 }());

@@ -81,6 +81,7 @@ h1 { font-size: clamp(1.8rem, 4vw, 2.65rem); }
 .reblog-trail-entry:first-child { padding-top: .35rem; border-top: 0; }
 .trail-identity { display: flex; gap: .6rem; align-items: center; min-width: 0; margin-bottom: .45rem; font-weight: 700; }
 .trail-avatar { flex: 0 0 auto; width: 1.8rem; height: 1.8rem; object-fit: cover; border-radius: 50%; background: #303943; }
+.post-rendered-content .trail-avatar { margin-inline: 0; }
 .trail-avatar.placeholder { display: block; }
 .trail-content { min-width: 0; padding-left: 2.4rem; overflow-wrap: anywhere; }
 .trail-content:empty { display: none; }
@@ -113,3 +114,38 @@ h1 { font-size: clamp(1.8rem, 4vw, 2.65rem); }
     .profile-header { padding: .8rem; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .001ms !important; animation-duration: .001ms !important; } }
+
+/* Shared application shell. The archive is content; tools live in the drawer. */
+body.drawer-open { overflow: hidden; }
+.archive-chrome { padding: 0; }
+.app-header { display: flex; gap: .7rem; align-items: center; min-height: 3.2rem; max-width: var(--reader-width); margin-inline: auto; }
+.app-menu-toggle, .app-drawer-close { display: inline-grid; place-items: center; min-inline-size: 2.5rem; min-block-size: 2.5rem; padding: .3rem; color: var(--text); background: transparent; border: 1px solid transparent; border-radius: .3rem; font-size: 1.2rem; }
+.app-menu-toggle:hover, .app-drawer-close:hover { background: var(--card-bg); border-color: var(--card-border); }
+.app-title { color: var(--text); font-weight: 700; text-decoration: none; }
+.app-crawl-status { margin-inline-start: auto; padding: .25rem .5rem; color: var(--text-muted); font-size: .8rem; text-decoration: none; white-space: nowrap; }
+.app-crawl-status:hover, .app-crawl-status:focus-visible { color: var(--text); text-decoration: underline; }
+.app-drawer-layer { position: relative; z-index: 10; }
+.app-drawer-backdrop[hidden], .app-drawer[hidden] { display: none !important; }
+.app-drawer-backdrop { position: fixed; inset: 0; z-index: 20; background: rgba(0, 0, 0, .56); }
+.app-drawer { position: fixed; inset-block: 0; inset-inline-start: 0; z-index: 21; display: flex; flex-direction: column; inline-size: min(20rem, 88vi); max-inline-size: 100%; padding: .8rem; overflow-y: auto; color: var(--text); background: var(--sidebar-bg); border-inline-end: 1px solid var(--card-border); box-shadow: 0 .5rem 2rem rgba(0, 0, 0, .35); }
+.app-drawer-header { display: flex; gap: .5rem; align-items: center; padding-block-end: .8rem; border-block-end: 1px solid var(--divider); }
+.app-drawer-title { color: var(--text); font-weight: 700; text-decoration: none; }
+.app-drawer-close { margin-inline-start: auto; }
+.app-nav-group { display: grid; align-content: start; gap: .15rem; margin-block-start: 1rem; }
+.app-nav-group h2 { margin: 0 0 .25rem; color: var(--text-muted); font-size: .72rem; letter-spacing: .08em; text-transform: uppercase; }
+.app-nav-group a { display: block; padding: .55rem .65rem; color: var(--text); border-inline-start: 3px solid transparent; border-radius: .25rem; text-decoration: none; }
+.app-nav-group a:hover, .app-nav-group a:focus-visible { background: var(--card-bg); }
+.app-nav-group a[aria-current="page"] { border-inline-start-color: var(--focus); font-weight: 700; text-decoration: underline; }
+.app-drawer-status { margin-block-start: auto; padding-block-start: .8rem; color: var(--text-muted); border-block-start: 1px solid var(--divider); font-size: .82rem; }
+.app-drawer-status a { color: var(--text); }
+@media (prefers-reduced-motion: no-preference) {
+    .app-drawer { transition: transform .18s ease; }
+    .app-drawer-backdrop { transition: opacity .18s ease; }
+}
+.app-drawer:dir(rtl) { inset-inline-start: auto; inset-inline-end: 0; }
+.crawler-page, .settings-page { max-width: var(--reader-width); margin: 1.2rem auto; }
+.crawler-page h1, .settings-page h1 { margin-block-start: 0; }
+.settings-page h2 { color: var(--text-muted); font-size: 1rem; }
+.crawler-page .crawler-live { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr)); gap: .55rem; }
+.crawler-page .crawler-setup { grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); }
+.crawler-page .crawler-stop { display: inline-block; }

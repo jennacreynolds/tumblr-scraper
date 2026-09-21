@@ -3,11 +3,39 @@
 ▚▘▟▖▙▌▟▖▙▖▛▌▌▝▌▙▖▙▖
                    
 
-TUMBLR SCRAPER
+TUMBLR SCRAPER - EARLY BETA
 
-This builds a growing local library of public Tumblr blogs and their observed neighborhood.
+This is a local Tumblr archiver that saves a public Tumblr blog together with
+a bounded, scout-guided neighborhood of related public blogs. Tumblr blogs do
+not exist in isolation: observed reblogs and interactions can preserve useful
+context if accounts disappear.
+
+This is early beta software intended to help preserve public Tumblr material
+during ongoing account loss. Expect rough edges. Keep the original Backups/
+directory; updates are designed to resume rather than replace preserved source
+records.
 
 It does not need a Tumblr login, account, API key, or upload to a server.
+Only public Tumblr material is used. Neighborhood relationships are
+observational evidence, not proof of friendship, following, or endorsement.
+Public feed availability is imperfect.
+
+QUICK START
+
+1. Download the ZIP or clone this repository.
+2. Extract it into a folder.
+3. Run the launcher for your platform below.
+4. The browser opens the local archive.
+5. Enter a public Tumblr blog name.
+6. Choose a maximum new-post budget, focus, depth, and network profile.
+7. Press Start crawl.
+8. Read Blogs, Dashboard, Tags, or Neighborhoods.
+
+Recommended beta settings: Explore, depth 2, Balanced, Gentle, and a bounded
+maximum-new-post budget. Balanced splits effort between the target and
+surrounding blogs. Depth 2 means target -> nearby -> their nearby blogs.
+Gentle uses lower request pressure. Maximum new posts is one total budget
+across the whole hunt, not one budget per blog.
 
 ANDROID WITH PYDROID 3
 
@@ -54,6 +82,21 @@ Tumblr, or a localhost server.
 
 The application boundary and bridge contract are documented in ARCHITECTURE.md.
 
+FIRST-RUN DEPENDENCIES
+
+The release preserves tumblr-backup==1.0.7 and urllib3>=2.2.2,<2.6. If
+bundled wheels are not present, the launcher prints "First run: installing
+required Tumblr archive components..." and uses pip once with internet access.
+This is not a fully offline installer.
+
+DEVELOPMENT TESTING
+
+From the repository root, run:
+
+    python3 -m unittest discover -q
+
+The tests use temporary archive roots and do not require Tumblr network access.
+
 
 
 
@@ -82,13 +125,12 @@ Image choice:
 
 The tool does not recompress or alter images.
 
-Surrounding public context:
+SURROUNDING PUBLIC CONTEXT:
 
-- This blog only saves the blog you entered.
-- Nearby context also saves small samples from the public blogs this blog
-  appears to interact with most.
-- Explore blog neighborhood follows observed public interactions outward,
-  within bounded depth and storage limits.
+- Explore saves bounded samples from public blogs observed around the target
+  and follows those observations outward within the selected depth.
+- The target is the origin of the hunt; canonical archives are top-level
+  Backups/<blog>/ holdings.
 
 Context snapshots are samples, not complete backups of those blogs. The
 target blog remains the priority, and context work resumes incrementally on

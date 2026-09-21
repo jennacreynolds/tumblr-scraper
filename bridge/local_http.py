@@ -112,8 +112,20 @@ class LocalControlRequestHandler(SimpleHTTPRequestHandler):
     def log_message(self, _format: str, *_args: object) -> None:
         return
 
+    def log_request(self, code: int | str = "-", _size: int | str = "-") -> None:
+        """Log actionable missing routes without promoting browser noise."""
+        try:
+            status = int(code)
+        except (TypeError, ValueError):
+            status = 0
+        path = urlsplit(self.path).path
+        if status >= 400 and path not in {"/favicon.ico", "/Backups/favicon.ico"}:
+            print(f"{status} {self.command} {path}", file=sys.stderr)
+
     def log_error(self, format: str, *args: object) -> None:
-        print(f"Archive server error: {format % args}", file=sys.stderr)
+        # send_error calls log_request, which includes the request path.
+        # Keep this hook quiet to avoid duplicate, path-less diagnostics.
+        return
 
 
 class LocalControlBridge:

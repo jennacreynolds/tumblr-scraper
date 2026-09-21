@@ -143,24 +143,19 @@ def install_local_dependencies() -> bool:
     except ImportError:
         pass
 
-    print("\nFirst-time setup required.")
-    print("Installing required Python packages from this folder...")
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "pip",
-            "install",
-            "--no-index",
-            "--find-links",
-            str(WHEELS),
-            "tumblr-backup==1.0.7",
-            "urllib3>=2.2.2,<2.6",
-        ],
-        check=False,
-    )
+    packages = ["tumblr-backup==1.0.7", "urllib3>=2.2.2,<2.6"]
+    if WHEELS.is_dir() and any(WHEELS.iterdir()):
+        print("\nFirst-time setup required.")
+        print("Installing required Tumblr archive components from bundled wheels...")
+        command = [sys.executable, "-m", "pip", "install", "--no-index", "--find-links", str(WHEELS), *packages]
+    else:
+        print("\nFirst run: installing required Tumblr archive components...")
+        print("This release needs internet access once to download pinned Python packages.")
+        command = [sys.executable, "-m", "pip", "install", *packages]
+    result = subprocess.run(command, check=False)
     if result.returncode != 0:
         print("Required Python packages could not be installed.")
+        print("Check Python/pip and internet access, then run the launcher again.")
         return False
     return True
 
@@ -297,6 +292,23 @@ def terminal_request() -> main.CrawlRequest:
     )
 
 
+def stop_application_safely(application: main.CrawlerApplication, timeout: float = 30.0) -> bool:
+    """Request the shared safe stop and refuse to abandon a live worker."""
+    if application.state not in {"starting", "running", "stopping", "finalizing"}:
+        return True
+    try:
+        application.stop()
+    except main.PolicyError:
+        pass
+    worker = application.worker
+    if worker is not None:
+        worker.join(timeout=timeout)
+    if worker is not None and worker.is_alive():
+        print("The crawl is still stopping; leaving the terminal open for safe completion.")
+        return False
+    return True
+
+
 def run_browser_first(
     application: main.CrawlerApplication,
     *,
@@ -344,7 +356,9 @@ def run_browser_first(
                 try:
                     command = input().strip().lower()
                 except EOFError:
-                    break
+                    if stop_application_safely(application):
+                        break
+                    continue
                 if command == "t":
                     if application.state in {"starting", "running", "stopping", "finalizing"}:
                         print("A crawl is already active; use the browser or Ctrl+C.")
@@ -356,12 +370,10 @@ def run_browser_first(
                     except (argparse.ArgumentTypeError, main.PolicyError) as exc:
                         print(f"Terminal fallback could not start: {exc}")
                 elif command in {"q", "quit", "exit"}:
-                    break
+                    if stop_application_safely(application):
+                        break
         except KeyboardInterrupt:
-            if application.state in {"starting", "running"} and main.ACTIVE_RUNTIME is not None:
-                application.stop()
-                if application.worker is not None:
-                    application.worker.join()
+            stop_application_safely(application)
             return 130
         return 0 if application.state in {"idle", "complete"} else 1
     finally:
