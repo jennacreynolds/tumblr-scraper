@@ -75,6 +75,6 @@ htmlcov/
 
 # ============================================================
 # Source that must remain trackable:
-# main.py, Android Tumblr-Scraper.py, launchers, tests, README*,
+# main.py, Tumblr Scraper - Android.py, launchers, tests, README*,
 # policy files, assets/, vendor/, and THIRD_PARTY.md.
 # ============================================================

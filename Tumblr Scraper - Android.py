@@ -1,5 +1,5 @@
 #Pydroid run terminal
-"""One-button launcher for the Tumblr backup in Pydroid 3."""
+"""Interactive launcher for the Tumblr archive in Pydroid 3 and desktop wrappers."""
 
 from __future__ import annotations
 
@@ -31,6 +31,26 @@ def prompt_username() -> str:
             return main.canonical_username(value)
         except argparse.ArgumentTypeError as exc:
             print(f"Please enter a valid Tumblr blog name: {exc}.")
+
+
+def prompt_action() -> str:
+    archive_index = main.BACKUPS_DIR / "index.html"
+    print(
+        "Choose an action:\n\n"
+        "1. Open existing archive\n"
+        "2. Run a new crawl\n"
+    )
+    while True:
+        value = input("Choice [1]:\n> ").strip() or "1"
+        if value == "1":
+            if archive_index.is_file():
+                return "open"
+            print(f"No generated archive found at {archive_index}.")
+            print("Choose 2 to run a crawl first.")
+            continue
+        if value == "2":
+            return "crawl"
+        print("Please choose 1 or 2.")
 
 
 def prompt_max_posts() -> int:
@@ -260,7 +280,13 @@ def run_scraper(
 
 
 def main_entry() -> int:
-    print("TUMBLR BACKUP\n")
+    print("TUMBLR SCRAPER\n")
+    action = prompt_action()
+    if action == "open":
+        print("Opening local archive...")
+        open_archive(main.BACKUPS_DIR)
+        return 0
+
     username = prompt_username()
     max_posts = prompt_max_posts()
     try:

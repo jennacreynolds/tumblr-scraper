@@ -16,7 +16,7 @@ ANDROID WITH PYDROID 3
 3. Open the normal Files app.
 4. Tap the ZIP and choose Extract.
 5. Open the Tumblr-Scraper folder.
-6. Tap Run Tumblr Backup.py.
+6. Tap Tumblr Scraper - Android.py.
 7. Choose Pydroid 3 if Android asks.
 8. Press the Run button.
 
@@ -24,35 +24,31 @@ WINDOWS
 
 1. Extract the ZIP.
 2. Open the Tumblr-Scraper folder.
-3. Double-click Run Tumblr Backup.bat.
+3. Double-click Tumblr Scraper - Windows.bat.
 
 MAC
 
 1. Extract the ZIP.
 2. Open the Tumblr-Scraper folder.
-3. Double-click Run Tumblr Backup.command.
+3. Double-click Tumblr Scraper - macOS.command.
 
 LINUX
 
 1. Extract the ZIP.
 2. Open the Tumblr-Scraper folder.
-3. Double-click Run Tumblr Backup.desktop.
+3. Double-click Tumblr Scraper - Linux.desktop.
 
-The program asks for the Tumblr blog name. Enter only the name, for example:
+If you choose Run a new crawl, the program asks for the Tumblr blog name.
+Enter only the name, for example:
 
 vigilanceos
 
 Your saved blogs are inside the Backups folder. The archive opens in your
 normal browser when the backup finishes.
 
-To browse an already-generated archive without starting a crawl, double-click
-Open Tumblr Archive.desktop on Linux, or run Open Tumblr Archive.sh,
-Open Tumblr Archive.command, Open Tumblr Archive.bat, or:
-
-    python3 open_archive.py
-
-The optional viewer listens only on 127.0.0.1. Directly opening
-Backups/index.html remains a supported fallback.
+When the launcher opens, choose Open existing archive or Run a new crawl. The
+optional viewer listens only on 127.0.0.1. Directly opening Backups/index.html
+remains a supported fallback.
 
 
 
@@ -67,7 +63,7 @@ Backups/index.html remains a supported fallback.
 MORE INFORMATION
 
 If tapping the Python file does not offer Pydroid, open Pydroid 3, choose
-Open, then open Downloads, Tumblr-Scraper, and Run Tumblr Backup.py.
+Open, then open Downloads, Tumblr-Scraper, and Tumblr Scraper - Android.py.
 
 Maximum posts:
 
@@ -116,7 +112,6 @@ The archive is stored at:
 
 Tumblr-Scraper/Backups/<blog>/
 
-The separate Open Tumblr Archive launcher can be used after the crawler exits.
 
 If Android's built-in file manager makes ordinary folder browsing difficult,
 Fossify File Manager from Google Play is an optional free/open-source

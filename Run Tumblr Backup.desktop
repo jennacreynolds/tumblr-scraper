@@ -1,7 +1,0 @@
-#!/usr/bin/env xdg-open
-[Desktop Entry]
-Type=Application
-Name=Run Tumblr Backup
-Comment=Back up a public Tumblr blog
-Terminal=true
-Exec=sh -c "cd \"\\$(dirname \"\\$1\")\" && exec sh \"Run Tumblr Backup.sh\"" sh %k

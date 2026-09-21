@@ -1,7 +1,0 @@
-#!/usr/bin/env xdg-open
-[Desktop Entry]
-Type=Application
-Name=Open Tumblr Archive
-Comment=Read the generated local Tumblr archive
-Terminal=true
-Exec=sh -c "cd \"\\$(dirname \"\\$1\")\" && exec sh \"Open Tumblr Archive.sh\"" sh %k

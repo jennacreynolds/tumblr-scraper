@@ -1,0 +1,7 @@
+#!/usr/bin/env xdg-open
+[Desktop Entry]
+Type=Application
+Name=Tumblr Scraper - Linux
+Comment=Open the local archive or run a Tumblr crawl
+Terminal=true
+Exec=sh -c "cd \"\\$(dirname \"\\$1\")\" && exec python3 \"Tumblr Scraper - Android.py\"" sh %k
