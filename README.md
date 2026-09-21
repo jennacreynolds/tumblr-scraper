@@ -1,8 +1,3 @@
-▖▖▄▖▄▖▄▖▖ ▄▖▖ ▖▄▖▄▖
-▌▌▐ ▌ ▐ ▌ ▌▌▛▖▌▌ ▙▖
-▚▘▟▖▙▌▟▖▙▖▛▌▌▝▌▙▖▙▖
-                   
-
 TUMBLR SCRAPER - EARLY BETA
 
 This is a local Tumblr archiver that saves a public Tumblr blog together with
@@ -184,8 +179,3 @@ https://www.blosxom.com
 Your blog always, always belonged to you,
 not the owners of the servers who host it.
 
-
-<3      ▜          
-▛▘█▌▌▌█▌▐ ▌▌▌▀▌▛▘█▌
-▌ ▙▖▚▘▙▖▐▖▚▚▘█▌▌ ▙▖.tumblr.com
-                   
