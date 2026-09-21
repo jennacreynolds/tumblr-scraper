@@ -170,7 +170,7 @@ def open_archive(archive: Path) -> None:
     bridge = create_live_bridge(application, archive)
     url = bridge.start()
     try:
-        opened = webbrowser.open(url, new=2)
+        opened = False if os.environ.get("TUMBLR_SCRAPER_NO_BROWSER") == "1" else webbrowser.open(url, new=2)
         if not opened:
             try:
                 import androidhelper

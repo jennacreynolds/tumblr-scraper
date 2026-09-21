@@ -44,6 +44,7 @@ def main() -> int:
         unrelated.mkdir()
         environment = os.environ.copy()
         environment["BROWSER"] = "true"
+        environment["TUMBLR_SCRAPER_NO_BROWSER"] = "1"
         environment["PYTHONDONTWRITEBYTECODE"] = "1"
 
         run([str(Path(os.environ.get("PYTHON", shutil.which("python") or "python3"))), str(project / "bootstrap.py"), "cli", "--help"], cwd=unrelated, environment=environment)

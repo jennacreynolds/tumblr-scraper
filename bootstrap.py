@@ -228,6 +228,14 @@ def launch(mode: str, argv: Sequence[str] = (), *, pydroid: bool = False) -> int
     environment = os.environ.copy()
     environment[BOOTSTRAP_ACTIVE] = "1"
     environment["TUMBLR_BOOTSTRAP_ROOT"] = str(PROJECT_ROOT)
+    if os.name == "nt":
+        result = subprocess.run(
+            [str(runtime), str(target), *[str(value) for value in argv]],
+            cwd=str(PROJECT_ROOT),
+            env=environment,
+            check=False,
+        )
+        return result.returncode
     os.execve(str(runtime), [str(runtime), str(target), *[str(value) for value in argv]], environment)
     raise AssertionError("os.execve returned unexpectedly")
 

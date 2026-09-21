@@ -39,6 +39,7 @@ class LauncherPortabilityTests(unittest.TestCase):
         self.unrelated_cwd.mkdir()
         self.environment = os.environ.copy()
         self.environment["BROWSER"] = "true"
+        self.environment["TUMBLR_SCRAPER_NO_BROWSER"] = "1"
         self.environment["PYTHONDONTWRITEBYTECODE"] = "1"
         runtime_python = self.root / ".runtime" / "venv" / "bin" / "python"
         runtime_python.parent.mkdir(parents=True)
@@ -79,10 +80,11 @@ class LauncherPortabilityTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
+        resolved_root = self.root.resolve()
         self.assertEqual(result.stdout.splitlines(), [
-            str(self.root),
-            str(self.root / "network-policy.json"),
-            str(self.root / "assets"),
+            str(resolved_root),
+            str(resolved_root / "network-policy.json"),
+            str(resolved_root / "assets"),
         ])
 
     def test_android_python_launcher_starts_from_unrelated_cwd(self) -> None:

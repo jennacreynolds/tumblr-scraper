@@ -36,9 +36,10 @@ class BootstrapTests(unittest.TestCase):
 
     def test_valid_runtime_is_reused(self) -> None:
         runtime = self.seed_runtime()
-        self.assertTrue(bootstrap.runtime_is_valid(self.root))
-        with mock.patch.object(bootstrap, "_create_venv") as create:
-            self.assertEqual(bootstrap.ensure_desktop_runtime(self.root), runtime)
+        with mock.patch.object(bootstrap, "_runtime_imports_are_valid", return_value=True):
+            self.assertTrue(bootstrap.runtime_is_valid(self.root))
+            with mock.patch.object(bootstrap, "_create_venv") as create:
+                self.assertEqual(bootstrap.ensure_desktop_runtime(self.root), runtime)
         create.assert_not_called()
 
     def test_stale_stamp_invalidates_runtime(self) -> None:
