@@ -1920,7 +1920,6 @@ def _render_post_card(record: dict[str, Any], destination_page: Path, *, compact
     avatar_html = f'<img class="post-avatar" src="{escape(avatar)}" alt="" loading="lazy">' if avatar else '<span class="post-avatar placeholder" aria-hidden="true"></span>'
     blog_href = os.path.relpath(canonical_archive_root(blog) / "index.html", destination_page.parent).replace(os.sep, "/")
     post_href = os.path.relpath(source_page, destination_page.parent).replace(os.sep, "/")
-    title = str(profile.get("title") or blog)
     date_value = str(record.get("date") or "")
     timestamp = int(record.get("timestamp") or 0)
     time_label = date_value or (time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime(timestamp)) if timestamp else "undated")
@@ -1945,8 +1944,7 @@ def _render_post_card(record: dict[str, Any], destination_page: Path, *, compact
     return (
         f'<article class="{classes}" id="{escape(namespace + "card")}">'
         f'<header class="post-card-header">{avatar_html}<div class="post-card-identity">'
-        f'<a class="post-blog" href="{escape(blog_href)}"><bdi dir="auto">{escape(title)}</bdi></a>'
-        f'<span class="post-username">@{escape(blog)}</span>'
+        f'<a class="post-blog" href="{escape(blog_href)}"><bdi dir="auto">{escape(blog)}</bdi></a>'
         f'<time datetime="{escape(str(timestamp))}">{escape(time_label)}</time></div></header>'
         + attribution_html
         + f'<div class="post-rendered-content">{body}</div>'
@@ -2162,7 +2160,7 @@ def _render_blog_page(blog: str, records: list[dict[str, Any]]) -> str:
     content = (
         '<section class="profile-header">'
         f'{avatar_html}<div><h1><bdi dir="auto">{escape(title)}</bdi></h1>'
-        f'<p class="profile-username">@{escape(blog)}</p>{bio}'
+        f'<p class="profile-username">{escape(blog)}</p>{bio}'
         f'<p class="archive-meta">{len(records)} locally preserved posts</p></div></section>'
         '<nav class="context-nav" aria-label="Blog sections">'
         '<a href="index.html" aria-current="page">Posts</a> '

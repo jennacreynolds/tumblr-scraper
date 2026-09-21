@@ -52,7 +52,7 @@ h1 { font-size: clamp(1.8rem, 4vw, 2.65rem); }
 .post-avatar.placeholder, .profile-avatar.placeholder { display: block; }
 .post-card-identity { display: grid; min-width: 0; line-height: 1.25; }
 .post-blog { overflow-wrap: anywhere; font-weight: 700; }
-.post-username, .post-card time, .archive-meta, .post-attribution { color: var(--text-muted); font-size: .83rem; }
+.post-card time, .archive-meta, .post-attribution { color: var(--text-muted); font-size: .83rem; }
 .post-card time { margin-top: .16rem; }
 .post-attribution { margin: 0; padding: 0 1rem .7rem; }
 .post-rendered-content { min-width: 0; padding: .25rem 1rem 1rem; overflow-wrap: anywhere; }

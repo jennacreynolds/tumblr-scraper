@@ -290,6 +290,8 @@ class PresentationTests(unittest.TestCase):
                 dashboard = (main.BACKUPS_DIR / "dashboard.html").read_text(encoding="utf-8")
                 self.assertIn("post-card", dashboard)
                 self.assertIn("Hello", dashboard)
+                self.assertIn('class="post-blog" href="example/index.html"><bdi dir="auto">example</bdi>', dashboard)
+                self.assertNotIn('class="post-username"', dashboard)
                 self.assertTrue((blog_root / "profile" / "profile.json").is_file())
                 self.assertIn("A local archive", (blog_root / "index.html").read_text(encoding="utf-8"))
             finally:
