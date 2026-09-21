@@ -157,6 +157,42 @@ class NetworkPolicyTests(unittest.TestCase):
 
 
 class PresentationTests(unittest.TestCase):
+    def test_flat_reblog_trail_preserves_order_and_real_quotes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            old_backups = main.BACKUPS_DIR
+            main.BACKUPS_DIR = Path(directory) / "Backups"
+            try:
+                body = (
+                    '<p><a class="tumblr_blog" href="https://a.tumblr.com/post/1">a</a>:</p>'
+                    '<blockquote><p>A content</p><p><a class="tumblr_blog" href="https://b.tumblr.com/post/2">b</a>:</p>'
+                    '<blockquote><p>B content</p><blockquote><p>an actual quote</p></blockquote></blockquote></blockquote>'
+                )
+                rendered = main._render_flat_reblog_trail(body, main.BACKUPS_DIR / "dashboard.html")
+                self.assertEqual(rendered.count("reblog-trail-entry"), 2)
+                self.assertLess(rendered.index(">a</bdi>"), rendered.index(">b</bdi>"))
+                self.assertIn("A content", rendered)
+                self.assertIn("B content", rendered)
+                self.assertIn("<blockquote><p>an actual quote</p></blockquote>", rendered)
+                self.assertFalse((main.BACKUPS_DIR / "a").exists())
+                self.assertFalse((main.BACKUPS_DIR / "b").exists())
+            finally:
+                main.BACKUPS_DIR = old_backups
+
+    def test_profile_snapshot_uses_available_bio_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            old_backups = main.BACKUPS_DIR
+            main.BACKUPS_DIR = Path(directory) / "Backups"
+            try:
+                records = [
+                    {"timestamp": 2, "tumblelog": "example", "blog": {"title": "Example", "description": ""}},
+                    {"timestamp": 1, "tumblelog": "example", "blog": {"title": "Example", "description": "A durable bio"}},
+                ]
+                profile = main._write_profile_snapshot("example", records)
+                self.assertEqual(profile["description"], "A durable bio")
+                self.assertEqual(json.loads((main.BACKUPS_DIR / "example" / "profile" / "profile.json").read_text())["description"], "A durable bio")
+            finally:
+                main.BACKUPS_DIR = old_backups
+
     def test_global_catalog_orders_blogs_by_local_post_count(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             old_backups = main.BACKUPS_DIR

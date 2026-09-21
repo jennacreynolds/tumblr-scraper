@@ -33,7 +33,7 @@ import unicodedata
 import uuid
 from collections import Counter
 from dataclasses import dataclass, field
-from html import escape
+from html import escape, unescape
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -109,6 +109,7 @@ class BlogState:
     observed_urls: list[str] = field(default_factory=list)
     feed_start: int = 0
     feed_total: int | None = None
+    feed_blog: dict[str, Any] = field(default_factory=dict)
     feed_buffer: list[dict[str, Any]] = field(default_factory=list)
     first_feed_request: bool = True
     reached_existing: bool = False
@@ -724,11 +725,11 @@ def fetch_public_page(start: int, count: int = PAGE_SIZE) -> dict[str, Any]:
 
 
 def blog_info(feed: dict[str, Any], total: int) -> dict[str, Any]:
-    t = feed.get("tumblelog") or {}
+    t = feed.get("tumblelog") or feed.get("blog") or {}
     return {
         "name": BLOG,
-        "title": t.get("title") or BLOG,
-        "description": t.get("description") or "",
+        "title": t.get("title") or feed.get("title") or BLOG,
+        "description": t.get("description") or feed.get("description") or "",
         "url": t.get("url") or f"https://{BLOG_HOST}/",
         "posts": total,
         # tumblr-backup does not need a real UUID for this public-feed path.
@@ -1691,13 +1692,173 @@ def _rendered_post_body(source_page: Path, destination_page: Path, namespace: st
     return "".join(parser.parts).strip()
 
 
+@dataclass
+class _TrailNode:
+    tag: str | None
+    attrs: list[tuple[str, str | None]] = field(default_factory=list)
+    children: list["_TrailNode"] = field(default_factory=list)
+    text: str = ""
+
+
+class _TrailMarkupParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=False)
+        self.root = _TrailNode(None)
+        self.stack = [self.root]
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        node = _TrailNode(tag.lower(), attrs=list(attrs))
+        self.stack[-1].children.append(node)
+        if tag.lower() not in {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"}:
+            self.stack.append(node)
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self.stack[-1].children.append(_TrailNode(tag.lower(), attrs=list(attrs)))
+
+    def handle_endtag(self, tag: str) -> None:
+        for index in range(len(self.stack) - 1, 0, -1):
+            if self.stack[index].tag == tag.lower():
+                del self.stack[index:]
+                return
+
+    def handle_data(self, data: str) -> None:
+        self.stack[-1].children.append(_TrailNode(None, text=data))
+
+    def handle_entityref(self, name: str) -> None:
+        self.stack[-1].children.append(_TrailNode(None, text="&" + name + ";"))
+
+    def handle_charref(self, name: str) -> None:
+        self.stack[-1].children.append(_TrailNode(None, text="&#" + name + ";"))
+
+    def handle_comment(self, data: str) -> None:
+        self.stack[-1].children.append(_TrailNode(None, text="<!--" + data + "-->"))
+
+
+def _trail_node_text(node: _TrailNode) -> str:
+    if node.tag is None:
+        return node.text
+    return "".join(_trail_node_text(child) for child in node.children)
+
+
+def _trail_anchor(node: _TrailNode) -> tuple[str, str] | None:
+    if node.tag != "p":
+        return None
+    for child in node.children:
+        if child.tag != "a":
+            continue
+        attrs = {name.lower(): value or "" for name, value in child.attrs}
+        classes = set(attrs.get("class", "").split())
+        if "tumblr_blog" in classes:
+            name = unescape(_trail_node_text(child)).strip()
+            if name:
+                return name, attrs.get("href", "")
+    return None
+
+
+def _serialize_trail_node(node: _TrailNode) -> str:
+    if node.tag is None:
+        return node.text
+    attrs = "".join(
+        f' {name}="{escape(value or "", quote=True)}"' if value is not None else f" {name}"
+        for name, value in node.attrs
+    )
+    void = node.tag in {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"}
+    if void:
+        return f"<{node.tag}{attrs}>"
+    return f"<{node.tag}{attrs}>" + "".join(_serialize_trail_node(child) for child in node.children) + f"</{node.tag}>"
+
+
+def _trail_entries(nodes: list[_TrailNode]) -> list[tuple[str, str, list[_TrailNode]]] | None:
+    entries: list[tuple[str, str, list[_TrailNode]]] = []
+    while True:
+        meaningful = [node for node in nodes if node.tag is not None or node.text.strip()]
+        if len(meaningful) < 2:
+            break
+        identity = _trail_anchor(meaningful[0])
+        wrapper = meaningful[1]
+        if identity is None or wrapper.tag != "blockquote":
+            break
+        wrapper_children = [child for child in wrapper.children if child.tag is not None or child.text.strip()]
+        nested_index = next(
+            (child_index for child_index, child in enumerate(wrapper_children) if _trail_anchor(child)),
+            None,
+        )
+        if nested_index is None:
+            content = wrapper_children
+        else:
+            nested_wrapper_index = nested_index + 1
+            if nested_wrapper_index < len(wrapper_children) and wrapper_children[nested_wrapper_index].tag == "blockquote":
+                content = wrapper_children[:nested_index] + wrapper_children[nested_wrapper_index + 1:]
+            else:
+                content = wrapper_children[:nested_index] + wrapper_children[nested_index + 1:]
+        entries.append((identity[0], identity[1], content))
+        if nested_index is None:
+            break
+        nodes = wrapper_children[nested_index:]
+    return entries if len(entries) >= 1 else None
+
+
+def _participant_href(name: str, source_href: str, destination_page: Path) -> str | None:
+    try:
+        local_root = canonical_archive_root(name)
+    except ValueError:
+        local_root = None
+    local_json = local_root / "json" if local_root else Path()
+    if local_root is not None and local_json.is_dir() and any(local_json.glob("*.json")):
+        return os.path.relpath(local_root / "index.html", destination_page.parent).replace(os.sep, "/")
+    parsed = urlsplit(source_href)
+    if parsed.scheme in {"http", "https"} and parsed.netloc:
+        return source_href
+    return None
+
+
+def _participant_avatar(name: str, destination_page: Path) -> str | None:
+    try:
+        local_root = canonical_archive_root(name)
+    except ValueError:
+        return None
+    if not (local_root / "json").is_dir():
+        return None
+    return _local_profile_avatar(name, destination_page)
+
+
+def _render_flat_reblog_trail(body: str, destination_page: Path) -> str:
+    parser = _TrailMarkupParser()
+    try:
+        parser.feed(body)
+        parser.close()
+    except (AssertionError, ValueError):
+        return ""
+    entries = _trail_entries(parser.root.children)
+    if not entries:
+        return ""
+    rendered = []
+    for name, source_href, content in entries:
+        avatar = _participant_avatar(name, destination_page)
+        avatar_html = (
+            f'<img class="trail-avatar" src="{escape(avatar)}" alt="" loading="lazy">'
+            if avatar else '<span class="trail-avatar placeholder" aria-hidden="true"></span>'
+        )
+        href = _participant_href(name, source_href, destination_page)
+        name_html = f'<a href="{escape(href)}"><bdi dir="auto">{escape(name)}</bdi></a>' if href else f'<bdi dir="auto">{escape(name)}</bdi>'
+        content_html = "".join(_serialize_trail_node(child) for child in content).strip()
+        rendered.append(
+            '<section class="reblog-trail-entry">'
+            f'<header class="trail-identity">{avatar_html}<span>{name_html}</span></header>'
+            f'<div class="trail-content" dir="auto">{content_html}</div>'
+            '</section>'
+        )
+    return '<div class="reblog-trail" aria-label="Reblog trail">' + "".join(rendered) + "</div>"
+
+
 def _profile_path(blog: str) -> Path:
     return canonical_archive_root(blog) / "profile" / "profile.json"
 
 
 def _write_profile_snapshot(blog: str, records: list[dict[str, Any]]) -> dict[str, Any]:
     current = max(records, key=lambda record: int(record.get("timestamp") or 0), default={})
-    blog_info = current.get("blog") if isinstance(current.get("blog"), dict) else {}
+    blog_infos = [record.get("blog") for record in records if isinstance(record.get("blog"), dict)]
+    blog_info = next((value for value in blog_infos if value.get("description")), None) or (current.get("blog") if isinstance(current.get("blog"), dict) else {})
     profile = {
         "schema_version": 1,
         "blog": blog,
@@ -1739,6 +1900,9 @@ def _render_post_card(record: dict[str, Any], destination_page: Path, *, compact
     source_page = canonical_archive_root(blog) / "posts" / f"{post_id}.html"
     namespace = "post-" + re.sub(r"[^a-zA-Z0-9_-]", "-", blog + "-" + post_id) + "-"
     body = _rendered_post_body(source_page, destination_page, namespace)
+    flat_trail = _render_flat_reblog_trail(body, destination_page)
+    if flat_trail:
+        body = flat_trail
     profile_path = _profile_path(blog)
     profile = {}
     if profile_path.is_file():
@@ -1771,6 +1935,8 @@ def _render_post_card(record: dict[str, Any], destination_page: Path, *, compact
     tags_html = '<div class="post-tags" aria-label="Tags">' + " ".join(tags) + "</div>" if tags else ""
     source_url = str(record.get("post_url") or record.get("short_url") or "")
     source_action = f'<a href="{escape(source_url)}" rel="noreferrer noopener">Source</a>' if source_url else ""
+    notes = record.get("note_count")
+    notes_html = f'<span class="post-notes">{int(notes)} notes</span>' if notes is not None else ""
     classes = "post-card" + (" post-card-compact" if compact else "")
     return (
         f'<article class="{classes}" id="{escape(namespace + "card")}">'
@@ -1780,7 +1946,7 @@ def _render_post_card(record: dict[str, Any], destination_page: Path, *, compact
         f'<time datetime="{escape(str(timestamp))}">{escape(time_label)}</time></div></header>'
         + attribution_html
         + f'<div class="post-rendered-content">{body}</div>'
-        + f'<footer class="post-card-footer">{tags_html}<div class="post-actions"><a href="{escape(post_href)}">Open archived post</a>{source_action}</div></footer>'
+        + f'<footer class="post-card-footer">{tags_html}<div class="post-actions">{notes_html}<a href="{escape(post_href)}">Open archived post</a>{source_action}</div></footer>'
         + "</article>"
     )
 
@@ -1985,7 +2151,7 @@ def _render_blog_page(blog: str, records: list[dict[str, Any]]) -> str:
     avatar_html = f'<img class="profile-avatar" src="{escape(avatar)}" alt="">' if avatar else '<span class="profile-avatar placeholder" aria-hidden="true"></span>'
     title = str(profile.get("title") or blog)
     description = profile.get("description")
-    bio = "" if description is None else f'<p class="profile-bio" dir="auto">{escape(str(description))}</p>'
+    bio = f'<p class="profile-bio" dir="auto">{escape(str(description))}</p>' if description else ""
     cards = []
     for record in sorted(records, key=lambda item: (-int(item.get("timestamp") or 0), str(item.get("id_string") or item.get("id")))):
         cards.append(_render_post_card(record, output))
@@ -2237,6 +2403,10 @@ def _fetch_state_page(state: BlogState) -> bool:
     feed = fetch_public_page(state.feed_start, PAGE_SIZE)
     state.first_feed_request = False
     posts = list(feed.get("posts") or [])
+    if not state.feed_blog:
+        candidate = feed.get("tumblelog") or feed.get("blog") or {}
+        if isinstance(candidate, dict):
+            state.feed_blog = dict(candidate)
     if state.feed_total is None:
         state.feed_total = int(feed.get("posts-total") or len(posts))
     if not posts:
@@ -2404,7 +2574,7 @@ def _process_source_ids(state: BlogState, sources: list[dict[str, Any]], candida
         assert state.blog == candidate.blog
         assert state.out == canonical_archive_root(candidate.blog or "")
         assert acquisition_lane == candidate.lane
-        normalized = normalize_post(source, {"tumblelog": {"name": state.blog}}, total)
+        normalized = normalize_post(source, {"tumblelog": state.feed_blog or {"name": state.blog}}, total)
         normalized["_puppetbackup_anchor_role"] = state.lane_role
         normalized["_puppetbackup_run_id"] = state.run_id
         normalized["_puppetbackup_graph_depth"] = candidate.graph_depth
