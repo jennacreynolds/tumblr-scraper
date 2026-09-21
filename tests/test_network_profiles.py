@@ -157,6 +157,26 @@ class NetworkPolicyTests(unittest.TestCase):
 
 
 class PresentationTests(unittest.TestCase):
+    def test_global_catalog_orders_blogs_by_local_post_count(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            old_backups = main.BACKUPS_DIR
+            main.BACKUPS_DIR = Path(directory) / "Backups"
+            try:
+                for blog, count in (("small", 5), ("largest", 135), ("middle", 50)):
+                    json_root = main.BACKUPS_DIR / blog / "json"
+                    json_root.mkdir(parents=True)
+                    for post_id in range(count):
+                        (json_root / f"{post_id}.json").write_text(
+                            json.dumps({"id": post_id}), encoding="utf-8"
+                        )
+                catalog = main.build_global_catalog()
+                self.assertEqual(
+                    [(item["blog"], item["local_post_count"]) for item in catalog["blogs"]],
+                    [("largest", 135), ("middle", 50), ("small", 5)],
+                )
+            finally:
+                main.BACKUPS_DIR = old_backups
+
     def test_post_fragment_rebases_and_hardens_aggregate_markup(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

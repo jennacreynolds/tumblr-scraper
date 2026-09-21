@@ -1845,6 +1845,7 @@ def build_global_catalog() -> dict[str, Any]:
             "last_observation": inventory.get("last_observation"),
             "last_checkpoint": inventory.get("last_checkpoint"),
         })
+    blogs.sort(key=lambda item: (-int(item["local_post_count"]), str(item["blog"]).casefold()))
     return {"schema_version": 1, "generated_at": time.time(), "blogs": blogs}
 
 
