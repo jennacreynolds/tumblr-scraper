@@ -246,6 +246,22 @@ def open_archive(archive: Path) -> None:
         server.server_close()
 
 
+def open_static_archive(archive: Path) -> None:
+    """Open the generated archive directly; no server is required for reading."""
+    index = (archive / "index.html").resolve()
+    if not index.is_file():
+        print(f"Archive index not found: {index}")
+        return
+    url = index.as_uri()
+    opened = webbrowser.open(url, new=2)
+    if not opened:
+        try:
+            import androidhelper
+            androidhelper.Android().startActivity("android.intent.action.VIEW", url)
+        except Exception:
+            print(f"Open this file in your browser:\n{index}")
+
+
 def run_scraper(
     username: str,
     max_posts: int,
@@ -275,7 +291,7 @@ def run_scraper(
 
     archive = main.BACKUPS_DIR
     print("\nOpening local archive...")
-    open_archive(archive)
+    open_static_archive(archive)
     return 0
 
 
@@ -284,7 +300,7 @@ def main_entry() -> int:
     action = prompt_action()
     if action == "open":
         print("Opening local archive...")
-        open_archive(main.BACKUPS_DIR)
+        open_static_archive(main.BACKUPS_DIR)
         return 0
 
     username = prompt_username()

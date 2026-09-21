@@ -47,8 +47,9 @@ Your saved blogs are inside the Backups folder. The archive opens in your
 normal browser when the backup finishes.
 
 When the launcher opens, choose Open existing archive or Run a new crawl. The
-optional viewer listens only on 127.0.0.1. Directly opening Backups/index.html
-remains a supported fallback.
+archive opens directly from Backups/index.html. Reading does not require
+Python, Tumblr, or a localhost server. A localhost viewer may still be used
+as a development preview convenience.
 
 
 

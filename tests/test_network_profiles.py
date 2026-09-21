@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 from urllib.error import HTTPError
+from urllib.parse import urlsplit
 
 import main
 
@@ -798,8 +799,19 @@ class ContextTests(unittest.TestCase):
                     self.assertEqual(text.count('class="reader-setting"'), 3)
                     self.assertIn('type="range"', text)
                     self.assertIn("puppet_reader", (main.BACKUPS_DIR / "assets" / "archive.js").read_text(encoding="utf-8"))
-                    for href in re.findall(r'<link rel="stylesheet" href="([^"]+archive\.css)">', text):
-                        self.assertTrue((page.parent / href).resolve().is_file(), (page, href))
+                    for ref in re.findall(r'(?:href|src)="([^"]+)"', text):
+                        parsed = urlsplit(ref)
+                        if not ref or ref.startswith("#") or parsed.scheme or parsed.netloc or ref.startswith("//"):
+                            continue
+                        self.assertFalse(parsed.path.startswith("/"), (page, ref))
+                        if parsed.path.endswith(("archive.css", "archive.js")):
+                            target = (page.parent / parsed.path).resolve()
+                            self.assertTrue(target.is_file(), (page, ref, target))
+
+                archive_js = (main.BACKUPS_DIR / "assets" / "archive.js").read_text(encoding="utf-8")
+                self.assertNotRegex(archive_js, r"\b(?:fetch|XMLHttpRequest)\b")
+                self.assertNotIn("localhost", archive_js)
+                self.assertNotIn("127.0.0.1", archive_js)
 
                 post = (main.BACKUPS_DIR / "target" / "posts" / "1.html").read_text(encoding="utf-8")
                 self.assertIn("../tags/", post)
