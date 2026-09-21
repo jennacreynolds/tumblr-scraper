@@ -133,9 +133,3 @@ https://www.blosxom.com
 
 Your blog always, always belonged to you,
 not the owners of the servers who host it.
-
-
-<3      ▜          
-▛▘█▌▌▌█▌▐ ▌▌▌▀▌▛▘█▌
-▌ ▙▖▚▘▙▖▐▖▚▚▘█▌▌ ▙▖.tumblr.com
-                   
