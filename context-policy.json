@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "scheduler": {
+    "cycle_turns": 20
+  },
+  "defaults": {
+    "max_neighbors_per_blog": 5,
+    "initial_probe_posts": 10,
+    "posts_per_context_blog": 50,
+    "global_context_blog_budget": 20,
+    "global_context_post_budget": 500,
+    "default_explore_depth": 2,
+    "scout_initial_pages": 2,
+    "scout_initial_records": 100,
+    "initial_neighborhood_posts": 5
+  },
+  "modes": {
+    "none": {"max_depth": 0},
+    "nearby": {"max_depth": 1},
+    "explore": {"max_depth": 2}
+  },
+  "default_focus": "balanced",
+  "focus_profiles": {
+    "deep": {"target_share": 80, "depth1_share": 15, "depth2_share": 5},
+    "balanced": {"target_share": 60, "depth1_share": 25, "depth2_share": 15},
+    "wide": {"target_share": 45, "depth1_share": 35, "depth2_share": 20}
+  },
+  "focus_endpoints": {
+    "outward": {"target_share": 0, "depth1_share": 60, "depth2_share": 40}
+  },
+  "relationship_weights": {
+    "target_reblogs_from": 5.0,
+    "other_reblogs_target": 1.0,
+    "target_likes_other": 5.0,
+    "other_likes_target": 1.0,
+    "reciprocal_bonus": 2.0,
+    "ask_answer": 1.0
+  },
+  "context_weights": {
+    "immediate_context_missing": 8.0,
+    "context_distance_decay": 0.5,
+    "support_ring_multiplier": 0.35
+  },
+  "representation_weights": {
+    "underrepresented_blog_bonus": 4.0,
+    "representation_decay": 1.0
+  },
+  "action_limits": {
+    "max_context_probe_pages": 2,
+    "max_context_ring": 3,
+    "max_actions_per_cycle": 1
+  },
+  "presentation_refresh_seconds": 30
+}

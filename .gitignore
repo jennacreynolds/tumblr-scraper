@@ -1,0 +1,80 @@
+# ============================================================
+# Tumblr-Scraper - local/generated/private data
+# ============================================================
+
+# Canonical/local Tumblr archives and personal backup data
+/Backups/
+/PuppetBackup/
+
+# Derived publishing output
+/Publish/
+
+# Generated distribution packages
+/*.zip
+
+# Python bytecode / caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE/editor state
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Runtime/debug output
+*.log
+/logs/
+/tmp/
+/temp/
+
+# Local secrets / credentials
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+credentials.json
+secrets.json
+
+# Neocities/private publish configuration
+neocities-config.json
+neocities-credentials.json
+
+# Local crawler/run state and neighborhood scouting output
+/run-state/
+/runtime-state/
+/Neighborhoods/
+**/scout/
+**/*scout*.json
+**/*scout*.log
+
+# Local test scratch/output
+/tests/tmp/
+/tests/output/
+/test-output/
+
+# Coverage/tool output
+.coverage
+coverage.xml
+htmlcov/
+
+# ============================================================
+# Source that must remain trackable:
+# main.py, Android Tumblr-Scraper.py, launchers, tests, README*,
+# policy files, assets/, vendor/, and THIRD_PARTY.md.
+# ============================================================

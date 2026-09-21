@@ -1,0 +1,7 @@
+#!/usr/bin/env xdg-open
+[Desktop Entry]
+Type=Application
+Name=Tumblr Scraper
+Comment=Back up a public Tumblr blog
+Terminal=true
+Exec=sh -c "cd \"\\$(dirname \"\\$1\")\" && exec sh \"Linux Tumblr-Scraper.sh\"" sh %k

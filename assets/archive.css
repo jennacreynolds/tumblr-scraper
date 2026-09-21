@@ -1,0 +1,76 @@
+/* Shared dark-first reader shell. This is source authority; Backups/assets is generated. */
+:root {
+    color-scheme: dark;
+    --page-bg: #111315;
+    --sidebar-bg: #181b1f;
+    --card-bg: #1b1f24;
+    --card-border: #303943;
+    --text: #eef1f4;
+    --text-muted: #aab4bf;
+    --link: #9fc7ff;
+    --link-hover: #d3e5ff;
+    --divider: #35404b;
+    --focus: #f4c95d;
+    --quote-bg: #202832;
+    --post-width: 35rem;
+    --reader-size: 1.08rem;
+    --reader-leading: 1.58;
+    --reader-width: 52rem;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html { background: var(--page-bg); }
+body {
+    min-width: 0; margin: 0; padding: 2rem 1.5rem 5rem;
+    background: var(--page-bg); color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: var(--reader-size); line-height: var(--reader-leading);
+}
+a { color: var(--link); text-underline-offset: .18em; }
+a:hover { color: var(--link-hover); }
+a:focus-visible, button:focus-visible, select:focus-visible, input:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+img, video, audio { max-width: 100%; height: auto; }
+main.reader-content { max-width: var(--reader-width); margin-inline: auto; }
+h1, h2, h3 { line-height: 1.2; color: var(--text); }
+h1 { font-size: clamp(1.8rem, 4vw, 2.65rem); }
+.reader-settings { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: .35rem .65rem; align-items: center; margin: -1rem auto 1rem; padding: .5rem .7rem; background: var(--sidebar-bg); border-bottom: 1px solid var(--divider); font-size: .86rem; }
+.reader-settings select { color: var(--text); background: var(--card-bg); border: 1px solid var(--card-border); }
+.archive-nav { display: flex; flex-wrap: wrap; gap: .45rem 1rem; margin: 0 auto 2rem; padding: .7rem 0; border-bottom: 1px solid var(--divider); text-transform: uppercase; letter-spacing: .04em; font-size: .82rem; }
+.archive-nav a[aria-current="page"] { color: var(--text); font-weight: 700; }
+.post-feed { display: grid; gap: 1.5rem; max-width: var(--post-width); margin-inline: auto; }
+.post-card { min-width: 0; overflow: hidden; padding: 0; background: var(--card-bg); border: 1px solid var(--card-border); border-radius: .55rem; box-shadow: 0 .3rem 1rem rgba(0, 0, 0, .18); }
+.post-card-header { display: flex; gap: .75rem; align-items: center; padding: 1rem 1rem .7rem; }
+.post-avatar, .profile-avatar { flex: 0 0 auto; width: 2.7rem; height: 2.7rem; object-fit: cover; border-radius: .35rem; background: #303943; }
+.post-avatar.placeholder, .profile-avatar.placeholder { display: block; }
+.post-card-identity { display: grid; min-width: 0; line-height: 1.25; }
+.post-blog { overflow-wrap: anywhere; font-weight: 700; }
+.post-username, .post-card time, .archive-meta, .post-attribution { color: var(--text-muted); font-size: .83rem; }
+.post-card time { margin-top: .16rem; }
+.post-attribution { margin: 0; padding: 0 1rem .7rem; }
+.post-rendered-content { min-width: 0; padding: .25rem 1rem 1rem; overflow-wrap: anywhere; }
+.post-rendered-content > h2:first-child { margin-top: .25rem; font-size: 1.25rem; }
+.post-rendered-content blockquote { margin: 1rem 0; padding: .7rem 1rem; background: var(--quote-bg); border-left: 3px solid var(--link); }
+.post-rendered-content pre { overflow-x: auto; padding: .8rem; background: #12161a; white-space: pre-wrap; }
+.post-rendered-content figure { margin: 0; }
+.post-rendered-content img, .post-rendered-content video { display: block; width: auto; max-width: 100%; margin-inline: auto; }
+.post-rendered-content .npf_row + .npf_row { margin-top: 4px; }
+.post-card-footer { display: grid; gap: .8rem; padding: .75rem 1rem 1rem; border-top: 1px solid var(--divider); color: var(--text-muted); font-size: .84rem; }
+.post-tags { display: flex; flex-wrap: wrap; gap: .25rem .65rem; }
+.post-tags a { color: var(--text-muted); }
+.post-actions { display: flex; flex-wrap: wrap; gap: .35rem 1rem; }
+.render-pending { color: var(--text-muted); }
+.profile-header { display: flex; gap: 1rem; align-items: flex-start; max-width: var(--post-width); margin: 0 auto 1rem; padding: 1rem; background: var(--sidebar-bg); border: 1px solid var(--card-border); border-radius: .55rem; }
+.profile-header h1 { margin: 0; font-size: 1.8rem; }
+.profile-username { margin: .1rem 0; color: var(--text-muted); }
+.profile-bio { margin: .7rem 0; white-space: pre-wrap; }
+.context-nav, .pagination { display: flex; flex-wrap: wrap; gap: .75rem 1rem; max-width: var(--post-width); margin: 0 auto 1rem; }
+.context-nav { padding-bottom: .75rem; border-bottom: 1px solid var(--divider); }
+.pagination { justify-content: center; padding-top: .5rem; }
+@media (max-width: 40rem) {
+    body { padding: 1rem .7rem 4rem; }
+    .reader-settings { margin: -.25rem -.7rem .75rem; overflow-x: auto; flex-wrap: nowrap; white-space: nowrap; }
+    .archive-nav { margin-bottom: 1.2rem; }
+    .post-card-header { padding: .8rem .8rem .55rem; }
+    .post-rendered-content, .post-card-footer { padding-inline: .8rem; }
+    .profile-header { padding: .8rem; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .001ms !important; animation-duration: .001ms !important; } }

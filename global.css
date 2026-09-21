@@ -1,0 +1,2 @@
+/* Compatibility entrypoint. The maintained archive stylesheet lives in assets/. */
+@import url("assets/archive.css");

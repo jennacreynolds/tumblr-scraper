@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "default_profile": "gentle",
+  "profiles": [
+    {
+      "id": "gentle",
+      "label": "Gentle",
+      "description": "Slower and uses fewer simultaneous requests. Least likely to trigger Tumblr's traffic limits.",
+      "feed_delay_seconds": 2.0,
+      "feed_jitter_seconds": 0.5,
+      "media_workers": 1
+    },
+    {
+      "id": "normal",
+      "label": "Normal",
+      "description": "A balance between speed and request pressure.",
+      "feed_delay_seconds": 0.75,
+      "feed_jitter_seconds": 0.25,
+      "media_workers": 2
+    },
+    {
+      "id": "urgent",
+      "label": "Urgent",
+      "description": "Uses more simultaneous requests and removes most voluntary waiting. It may finish faster, but Tumblr is more likely to slow or temporarily block requests.",
+      "feed_delay_seconds": 0.0,
+      "feed_jitter_seconds": 0.0,
+      "media_workers": 4
+    }
+  ]
+}
