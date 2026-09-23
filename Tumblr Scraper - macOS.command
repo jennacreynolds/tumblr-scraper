@@ -9,9 +9,14 @@ PROJECT_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" 2>/dev/null && pwd -P) || {
 
 cd "$PROJECT_ROOT" || exit 1
 
+APPLICATION_ROOT="$PROJECT_ROOT"
+if [ -f "$PROJECT_ROOT/app/bootstrap.py" ]; then
+    APPLICATION_ROOT="$PROJECT_ROOT/app"
+fi
+
 status=0
 if command -v python3 >/dev/null 2>&1; then
-    python3 "$PROJECT_ROOT/bootstrap.py" browser
+    python3 "$APPLICATION_ROOT/bootstrap.py" browser
     status=$?
 else
     echo "Python 3 was not found. Install Python 3 and try again."

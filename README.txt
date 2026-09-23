@@ -57,16 +57,17 @@ enter the Tumblr blog name, for example:
 
 vigilanceos
 
-Your saved blogs are inside the Backups folder. The browser archive is
+Your saved blogs are inside the active named archive. The browser reader is
 available before, during, and after a crawl.
 
 Press Start crawl in the browser. The terminal remains available as a
-fallback, but normal use does not require terminal prompts. The archive is
-also available later at Backups/index.html. Reading does not require Python,
-Tumblr, or a localhost server.
+fallback, but normal use does not require terminal prompts. The generated
+reader is also available later at Archive/default/App/index.html (or the
+selected archive name). Reading does not require Python, Tumblr, or a
+localhost server.
 
-The application boundary and bridge contract are documented in ARCHITECTURE.md.
-The repeatable immutable release procedure is documented in RELEASE_GATE.md.
+Developer orientation is documented in DEVELOPMENT.md. The application
+boundary and release procedure are in docs/.
 
 FIRST-RUN DEPENDENCIES
 
@@ -142,9 +143,12 @@ downloaded again unnecessarily. If the program closes or the connection
 fails, run it again. Saved work remains on the device and unfinished saved
 posts are processed first.
 
-The archive is stored at:
+Named archives are stored at:
 
-Tumblr-Scraper/Backups/<blog>/
+Tumblr-Scraper/Archive/<name>/
+
+Each bundle contains Content/ and Network/ data plus disposable generated
+reader output in App/.
 
 
 If Android's built-in file manager makes ordinary folder browsing difficult,

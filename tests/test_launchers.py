@@ -19,6 +19,7 @@ LAUNCHER_FILES = (
     "Tumblr Scraper - Windows.bat",
     "tumblr-scraper",
     "main.py",
+    "graph_projection.py",
     "global.css",
     "network-policy.json",
     "context-policy.json",
@@ -33,6 +34,7 @@ class LauncherPortabilityTests(unittest.TestCase):
         self.root.mkdir(parents=True)
         for name in LAUNCHER_FILES:
             shutil.copy2(REPOSITORY_ROOT / name, self.root / name)
+        shutil.copytree(REPOSITORY_ROOT / "src", self.root / "src")
         shutil.copytree(REPOSITORY_ROOT / "assets", self.root / "assets")
         shutil.copytree(REPOSITORY_ROOT / "bridge", self.root / "bridge")
         self.unrelated_cwd = Path(self.temp.name) / "unrelated cwd"
@@ -91,20 +93,20 @@ class LauncherPortabilityTests(unittest.TestCase):
         result = self.run_launcher(["python3", str(self.root / "Tumblr Scraper - Android.py")])
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("Tumblr-Scraper is ready.", result.stdout)
-        self.assertTrue((self.root / "Backups" / "index.html").is_file())
-        self.assertFalse((self.unrelated_cwd / "Backups").exists())
+        self.assertTrue((self.root / "Archive" / "default" / "App" / "feed.html").is_file())
+        self.assertFalse((self.unrelated_cwd / "Archive").exists())
 
     def test_linux_wrapper_starts_from_unrelated_cwd(self) -> None:
         result = self.run_launcher([str(self.root / "Tumblr-Scraper-Linux.sh")])
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("Tumblr-Scraper is ready.", result.stdout)
-        self.assertTrue((self.root / "Backups" / "index.html").is_file())
+        self.assertTrue((self.root / "Archive" / "default" / "App" / "feed.html").is_file())
 
     def test_macos_wrapper_starts_from_unrelated_cwd(self) -> None:
         result = self.run_launcher([str(self.root / "Tumblr Scraper - macOS.command")])
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("Tumblr-Scraper is ready.", result.stdout)
-        self.assertTrue((self.root / "Backups" / "index.html").is_file())
+        self.assertTrue((self.root / "Archive" / "default" / "App" / "feed.html").is_file())
 
     def test_cli_wrapper_uses_its_own_main_file(self) -> None:
         result = subprocess.run(

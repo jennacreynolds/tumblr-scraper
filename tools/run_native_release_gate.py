@@ -9,13 +9,30 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import sys
 
 from extract_release_artifact import extract_preserving_modes
 from verify_release_artifact import verify
 
 
-def run(command: list[str], *, cwd: Path, environment: dict[str, str]) -> None:
-    result = subprocess.run(command, cwd=cwd, env=environment, text=True, capture_output=True, check=False, timeout=180)
+def run(
+    command: list[str],
+    *,
+    cwd: Path,
+    environment: dict[str, str],
+    input_text: str = "",
+    timeout: int = 180,
+) -> None:
+    result = subprocess.run(
+        command,
+        cwd=cwd,
+        env=environment,
+        input=input_text,
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=timeout,
+    )
     if result.returncode:
         raise RuntimeError(
             f"Command failed ({result.returncode}): {' '.join(command)}\n"
@@ -47,12 +64,20 @@ def main() -> int:
         environment["TUMBLR_SCRAPER_NO_BROWSER"] = "1"
         environment["PYTHONDONTWRITEBYTECODE"] = "1"
 
-        run([str(Path(os.environ.get("PYTHON", shutil.which("python") or "python3"))), str(project / "bootstrap.py"), "cli", "--help"], cwd=unrelated, environment=environment)
+        run([sys.executable, str(project / "bootstrap.py"), "cli", "--help"], cwd=unrelated, environment=environment)
         runtime = project / ".runtime" / "venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
         if not runtime.is_file():
             raise RuntimeError(f"Private runtime was not created: {runtime}")
         run([str(runtime), "-m", "unittest", "discover", "-q"], cwd=project, environment=environment)
         run([str(runtime), str(project / "tumblr-scraper"), "--help"], cwd=unrelated, environment=environment)
+
+        if os.name == "nt":
+            launcher = ["cmd.exe", "/d", "/c", str(project / "Tumblr Scraper - Windows.bat")]
+        elif sys.platform == "darwin":
+            launcher = ["/bin/sh", str(project / "Tumblr Scraper - macOS.command")]
+        else:
+            launcher = ["/bin/sh", str(project / "Tumblr-Scraper-Linux.sh")]
+        run(launcher, cwd=unrelated, environment=environment, input_text="\n")
 
         if os.name == "posix":
             run(["sh", "-n", str(project / "Tumblr-Scraper-Linux.sh")], cwd=project, environment=environment)
@@ -60,16 +85,20 @@ def main() -> int:
             if shutil.which("desktop-file-validate"):
                 run(["desktop-file-validate", str(project / "Tumblr Scraper - Linux.desktop")], cwd=project, environment=environment)
             if shutil.which("gio"):
-                result = subprocess.run(
-                    ["gio", "launch", str(project / "Tumblr Scraper - Linux.desktop")],
-                    cwd=unrelated,
-                    env=environment,
-                    text=True,
-                    capture_output=True,
-                    check=False,
-                    timeout=20,
-                )
-                print(f"gio launch best-effort result: {result.returncode}")
+                try:
+                    result = subprocess.run(
+                        ["gio", "launch", str(project / "Tumblr Scraper - Linux.desktop")],
+                        cwd=unrelated,
+                        env=environment,
+                        input="\n",
+                        text=True,
+                        capture_output=True,
+                        check=False,
+                        timeout=20,
+                    )
+                    print(f"gio launch best-effort result: {result.returncode}")
+                except subprocess.TimeoutExpired:
+                    print("gio launch best-effort result: timeout (desktop session unavailable or launcher remained open)")
 
     print(f"Native release gate passed: {identity['artifact']} {identity['sha256']}")
     return 0

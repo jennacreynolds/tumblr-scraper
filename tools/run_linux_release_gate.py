@@ -66,6 +66,16 @@ def main() -> int:
             run(["node", "--check", str(project / "assets" / "archive.js")], cwd=project, environment=environment)
         if shutil.which("desktop-file-validate"):
             run(["desktop-file-validate", str(project / "Tumblr Scraper - Linux.desktop")], cwd=project, environment=environment)
+        desktop = project / "Tumblr Scraper - Linux.desktop"
+        wrapper = project / "Tumblr-Scraper-Linux.sh"
+        wrapper.chmod(0o644)
+        desktop_command = 'exec /bin/sh "$(dirname -- "$1")/Tumblr-Scraper-Linux.sh"'
+        run(
+            ["/bin/sh", "-c", desktop_command, "desktop-bootstrap", str(desktop)],
+            cwd=unrelated,
+            environment=environment,
+            input_text="\n",
+        )
         if not args.skip_browser:
             run(["/bin/sh", str(project / "Tumblr-Scraper-Linux.sh")], cwd=unrelated, environment=environment)
 

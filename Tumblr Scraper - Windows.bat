@@ -1,6 +1,8 @@
 @echo off
 setlocal
 set "PROJECT_ROOT=%~dp0"
+set "APPLICATION_ROOT=%PROJECT_ROOT%"
+if exist "%PROJECT_ROOT%app\bootstrap.py" set "APPLICATION_ROOT=%PROJECT_ROOT%app"
 pushd "%PROJECT_ROOT%" >nul 2>&1
 if errorlevel 1 (
     echo Tumblr Scraper could not enter "%PROJECT_ROOT%".
@@ -23,17 +25,17 @@ set "status=1"
 goto finish
 
 :use_py_launcher
-py -3 "%PROJECT_ROOT%bootstrap.py" browser
+py -3 "%APPLICATION_ROOT%bootstrap.py" browser
 set "status=%errorlevel%"
 goto finish
 
 :use_python_launcher
-python "%PROJECT_ROOT%bootstrap.py" browser
+python "%APPLICATION_ROOT%bootstrap.py" browser
 set "status=%errorlevel%"
 goto finish
 
 :use_python3_launcher
-python3 "%PROJECT_ROOT%bootstrap.py" browser
+python3 "%APPLICATION_ROOT%bootstrap.py" browser
 set "status=%errorlevel%"
 goto finish
 

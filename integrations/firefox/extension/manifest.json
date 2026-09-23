@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "Tumblr Scraper",
+  "version": "0.1.1",
+  "description": "Open the local Tumblr Scraper application.",
+  "permissions": ["nativeMessaging", "tabs"],
+  "action": {
+    "default_title": "Open Tumblr Scraper",
+    "default_area": "navbar"
+  },
+  "background": {
+    "scripts": ["background.js"]
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "tumblr-scraper-firefox@local.invalid",
+      "strict_min_version": "121.0"
+    }
+  }
+}

@@ -7,14 +7,17 @@ import argparse
 import os
 import subprocess
 import sys
+import signal
+import threading
 import webbrowser
 from pathlib import Path
 
 # Resolve the project before importing sibling modules. Pydroid and file
 # managers may choose an unrelated current working directory.
-PROJECT_ROOT = Path(__file__).resolve().parent
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+APPLICATION_ROOT = Path(__file__).resolve().parent
+PROJECT_ROOT = APPLICATION_ROOT.parent if APPLICATION_ROOT.name == "app" else APPLICATION_ROOT
+if str(APPLICATION_ROOT) not in sys.path:
+    sys.path.insert(0, str(APPLICATION_ROOT))
 
 import main
 import bootstrap
@@ -22,7 +25,7 @@ from bridge import LocalControlBridge, LocalControlRequestHandler
 
 
 ROOT = PROJECT_ROOT
-MAIN = PROJECT_ROOT / "main.py"
+MAIN = APPLICATION_ROOT / "main.py"
 
 
 def prompt_username() -> str:
@@ -147,21 +150,32 @@ def prompt_focus() -> str:
 ArchiveRequestHandler = LocalControlRequestHandler
 
 
-def create_live_bridge(application: main.CrawlerApplication, archive: Path | None = None) -> LocalControlBridge:
-    archive = archive or main.BACKUPS_DIR
+def create_live_bridge(
+    application: main.CrawlerApplication,
+    archive: Path | None = None,
+    *,
+    shutdown_handler=None,
+) -> LocalControlBridge:
+    archive = archive or main.ARCHIVE_ROOT
     archive_root = archive.resolve()
     archive_prefix = archive_root.relative_to(ROOT).as_posix()
     return LocalControlBridge(
         base_dir=ROOT,
         archive_root=archive_root,
-        neighborhood_root=main.NEIGHBORHOODS_DIR,
+        network_root=main.NETWORK_ROOT,
         global_css=main.GLOBAL_CSS,
         status_provider=application.snapshot,
         control_handler=lambda name, value: main.apply_runtime_control(name, value, source="browser"),
         start_handler=application.start,
         stop_handler=application.stop,
-        prepare_entrypoint=main.prepare_live_archive_entrypoint,
+        interface_provider=main.live_interface_page,
+        interface_root=main.SOURCE_ASSET_DIR,
         archive_url_prefix=archive_prefix,
+        runtime_state_path=main.RUNTIME_DIR / "backend.json",
+        runtime_owner=os.environ.get("TUMBLR_SCRAPER_RUNTIME_OWNER", "external"),
+        runtime_session_id=os.environ.get("TUMBLR_SCRAPER_FIREFOX_SESSION_ID", ""),
+        identity_provider=main.runtime_identity,
+        shutdown_handler=shutdown_handler,
     )
 
 
@@ -184,22 +198,6 @@ def open_archive(archive: Path) -> None:
             pass
     finally:
         bridge.close()
-
-
-def open_static_archive(archive: Path) -> None:
-    """Open the generated archive directly; no server is required for reading."""
-    index = (archive / "index.html").resolve()
-    if not index.is_file():
-        print(f"Archive index not found: {index}")
-        return
-    url = index.as_uri()
-    opened = webbrowser.open(url, new=2)
-    if not opened:
-        try:
-            import androidhelper
-            androidhelper.Android().startActivity("android.intent.action.VIEW", url)
-        except Exception:
-            print(f"Open this file in your browser:\n{index}")
 
 
 def run_scraper(
@@ -229,9 +227,8 @@ def run_scraper(
         )
         return result.returncode
 
-    archive = main.BACKUPS_DIR
-    print("\nOpening local archive...")
-    open_static_archive(archive)
+    print("\nOpening the source-owned local interface...")
+    open_archive(main.ARCHIVE_ROOT)
     return 0
 
 
@@ -296,10 +293,22 @@ def run_browser_first(
     application: main.CrawlerApplication,
     *,
     initial_request: main.CrawlRequest | None = None,
+    serve_only: bool = False,
 ) -> int:
     main.set_host_capabilities(compact_terminal=True, keyboard_controls=False)
+    # The browser bridge is live/source-owned, but every launcher also leaves
+    # a disposable static reader behind for offline use. Generate that output
+    # from the selected archive before the bridge starts serving pages.
     try:
-        bridge = create_live_bridge(application)
+        main.regenerate_global_presentation()
+    except Exception as exc:
+        print(f"Static archive reader regeneration was skipped: {exc}")
+    try:
+        stopped = threading.Event()
+        bridge = create_live_bridge(
+            application,
+            shutdown_handler=lambda: (stopped.set(), {"ok": True, "message": "server shutdown requested"})[1],
+        )
         url = bridge.start()
     except OSError as exc:
         print(f"Live archive controls are unavailable ({exc}); use terminal fallback.")
@@ -318,6 +327,16 @@ def run_browser_first(
         application.worker.join()
         return 0 if application.state == "complete" else 1
     try:
+        def request_stop(_signum, _frame) -> None:
+            stopped.set()
+
+        signal.signal(signal.SIGTERM, request_stop)
+        signal.signal(signal.SIGINT, request_stop)
+        if serve_only:
+            while not stopped.wait(1.0):
+                pass
+            stop_application_safely(application)
+            return 0
         opened = webbrowser.open(url, new=2)
         print(
             "Tumblr-Scraper is ready.\n\n"
@@ -339,9 +358,19 @@ def run_browser_first(
                 try:
                     command = input().strip().lower()
                 except EOFError:
-                    if stop_application_safely(application):
-                        break
-                    continue
+                    # A desktop launcher may have no interactive stdin even
+                    # though the browser is still using the server. EOF is
+                    # not a user shutdown request. Test mode is the one
+                    # intentional exception so launcher tests remain bounded.
+                    if os.environ.get("TUMBLR_SCRAPER_NO_BROWSER") == "1":
+                        if stop_application_safely(application):
+                            break
+                        continue
+                    print("Terminal input is unavailable; browser server remains active. Use the browser shutdown control or Ctrl+C.")
+                    while not stopped.wait(1.0):
+                        pass
+                    stop_application_safely(application)
+                    break
                 if command == "t":
                     if application.state in {"starting", "running", "stopping", "finalizing"}:
                         print("A crawl is already active; use the browser or Ctrl+C.")
@@ -365,9 +394,12 @@ def run_browser_first(
 
 def main_entry() -> int:
     print("TUMBLR SCRAPER\n")
+    serve_only = "--serve-only" in sys.argv[1:]
     if os.environ.get(bootstrap.BOOTSTRAP_ACTIVE) != "1":
+        if serve_only:
+            return bootstrap.launch("browser", ["--serve-only"], pydroid=bootstrap.is_pydroid())
         return bootstrap.launch("browser", pydroid=bootstrap.is_pydroid())
-    return run_browser_first(main.CrawlerApplication())
+    return run_browser_first(main.CrawlerApplication(), serve_only=serve_only)
 
 
 if __name__ == "__main__":

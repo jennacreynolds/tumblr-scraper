@@ -36,6 +36,25 @@ Thin launchers and hosts
 static-file hosting only. The launcher owns startup and host lifecycle; it
 does not implement crawler or archive behavior.
 
+## Future request-channel boundary
+
+The application controller accepts neutral crawl requests. It must not assume
+that a request came from the browser, CLI, Pydroid, Tumblr messaging, Discord,
+or another community adapter. Those hosts are responsible for translating
+their environment-specific input into the ordinary application call and for
+consuming the neutral status/result.
+
+Request channel and acquisition identity are separate:
+
+```text
+request channel != Tumblr acquisition identity
+```
+
+The current application does not implement messaging, bots, queues, or
+authenticated acquisition. This boundary is documented so future adapters do
+not duplicate crawler logic or put platform-specific concepts into crawler,
+archive, network, or acquisition models.
+
 ## Entry point
 
 Launching a supported wrapper starts an idle Python application, prepares the
@@ -87,6 +106,27 @@ edge.
   deferred to avoid a gratuitous packaging change.
 - A live crawl still depends on the owning Python process staying alive. This
   is a lifecycle constraint, not a second source of truth.
+
+## Mutable-state inventory
+
+The relocated core still has a deliberately small legacy mutable boundary.
+This is an inventory for staged extraction, not a new context container:
+
+| Category | Current owner | Migration status |
+| --- | --- | --- |
+| Application/resource/data locations | `tumblr_scraper.paths` | centralized |
+| Crawl request and run models | `tumblr_scraper.models` | explicit objects |
+| Active blog compatibility state (`BLOG`, `OUT`, `JSON_DIR`) | core module | legacy adapter; preserve until acquisition extraction |
+| Active run/status (`ACTIVE_RUNTIME`, `ACTIVE_STATUS`) | core module | process-wide lifecycle state; consumed by `application.py` |
+| Cancellation and lifecycle coordination | core module | process-wide event/lock; minimize during extraction |
+| Host capability flags and verbosity | core module | host compatibility state; migration target |
+| Network/configuration constants | core module | immutable or configuration candidates |
+| Test reassignment of archive paths | tests | compatibility seam; shrink with migration |
+
+The compatibility `main.py` facade aliases the package module rather than
+loading a second implementation. `import main` and
+`import tumblr_scraper.main` therefore share one module dictionary and one
+set of mutable variables.
 
 ## Change record
 

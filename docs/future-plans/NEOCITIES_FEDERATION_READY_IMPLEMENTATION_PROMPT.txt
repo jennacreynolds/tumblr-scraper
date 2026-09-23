@@ -1,0 +1,247 @@
+IMPLEMENTATION PROMPT — NEOCITIES, FEDERATION-READY FROM DAY 1
+
+Context
+
+Tumblr Blog Backup / Vigilance archive must be functioning and stable before this work begins.
+
+This task is for the future Neocities publishing implementation.
+
+Do NOT build federation itself yet.
+
+However, design the Neocities archive from its first implementation under the assumption that multiple independently hosted Neocities archives will later behave as one federated archive while each site keeps its own HTML, CSS, navigation, and visual identity.
+
+The rule is:
+
+    federate data, not presentation.
+
+A Neocities site is one replica/view of the archive, not a silo.
+
+GOALS
+
+Implement a static Neocities-compatible publication target that:
+
+- works entirely as static files;
+- remains usable over ordinary Neocities hosting;
+- keeps the site's own HTML/CSS/UX authoritative;
+- publishes canonical/derived archive data in a host-independent form;
+- does not make the hostname or filesystem path part of record identity;
+- can later discover/query other compatible archives without changing the core archive format;
+- does not require federation to function today.
+
+IDENTITY
+
+Do not use a Neocities URL as semantic identity.
+
+Posts must retain host-independent identity based on the existing Tumblr semantics, conceptually:
+
+    platform + canonical_blog + post_id
+
+For example:
+
+    tumblr:revelware:828422817508900864
+
+Blogs likewise need stable semantic identity independent of host.
+
+A record may later have many replica locations. Those locations are provenance/availability metadata, not separate logical posts.
+
+If the same logical post appears from multiple archives later, the future merge must be able to produce ONE logical post with multiple known replicas, not duplicates.
+
+ARCHIVE IDENTITY
+
+Give each published archive a stable archive_id that survives regeneration and should survive changing hosts.
+
+Do not derive archive_id from:
+- hostname;
+- local filesystem path;
+- Neocities username.
+
+Persist it locally as archive identity/config.
+
+DATA VS PRESENTATION
+
+Keep canonical/normalized data separate from rendered presentation.
+
+Do not make federation depend on importing another site's rendered HTML or CSS.
+
+Future flow must be possible:
+
+    remote canonical/normalized record
+        -> local merge/view layer
+        -> this site's renderer
+        -> this site's CSS
+
+A remote archive's JavaScript/CSS must never become required to display its records locally.
+
+STATIC OUTPUT
+
+Neocities output should be ordinary static HTML/CSS/JS/data files.
+
+Use relative URLs where practical.
+
+Do not introduce a server requirement.
+
+Do not require localhost, a database, or a backend service to browse the published archive.
+
+FEDERATION-READY METADATA
+
+Do not implement peer discovery, remote querying, cross-host search, or synchronization yet.
+
+But make the output format ready for them.
+
+Derived/catalog records should be able to expose at least:
+
+- semantic record ID;
+- canonical blog identity;
+- post ID where applicable;
+- archive_id of the publishing replica;
+- relative record/data location;
+- provenance;
+- capture breadth/depth metadata where useful;
+- available local media quality/completeness;
+- timestamps needed for monotonic merge decisions.
+
+Keep this small and boring.
+
+Do not invent an elaborate federation protocol in this task.
+
+RESERVE A CLEAN FEDERATION SEAM
+
+Structure generated network metadata so a future implementation can naturally add something like:
+
+    Archive/
+      Content/
+      Network/
+        Federation/
+
+Do not require that directory to contain a functioning protocol yet.
+
+Avoid choices that would make later additions such as these awkward:
+
+    manifest.json
+    catalog/index shards
+    peer references
+    static search metadata
+    bridge.html
+
+Do NOT implement these merely because the names are listed here unless they are needed for the Neocities publisher itself.
+
+MONOTONIC MERGE ASSUMPTION
+
+Design IDs and metadata so the future federation layer can behave monotonically:
+
+    unknown record + first replica
+        -> add record
+
+    known record + another replica
+        -> keep one logical record, add replica/provenance
+
+    known record + better media/source quality
+        -> retain/select higher-quality representation
+
+    lower-quality later observation
+        -> never downgrade a better known representation
+
+Remote disappearance must not imply deletion of previously retained local knowledge.
+
+Do not implement the merge engine now; just avoid data-model decisions that prevent it.
+
+SEARCH
+
+Do not write a custom full-text search engine.
+
+When Neocities search is implemented, evaluate mature static-search projects first, especially Pagefind.
+
+Keep the generated archive structure compatible with adding static multisite/federated search later.
+
+Do not make today's Neocities publishing depend on cross-origin fetch succeeding.
+
+CROSS-HOST TRANSPORT
+
+Do not implement cross-host transport yet.
+
+But do not assume future federation can rely on arbitrary CORS-enabled fetches.
+
+Keep the design compatible with a future tiny, constrained static bridge page (for example a same-origin iframe + postMessage boundary) if Neocities/CSP/CORS restrictions require it.
+
+Do not load arbitrary remote JavaScript into the local archive context.
+
+PROVENANCE
+
+Every future remote record must be able to retain where it came from.
+
+Make sure current Neocities publication does not discard provenance required to later distinguish:
+
+- logical record identity;
+- publishing archive/replica;
+- original Tumblr source;
+- acquisition time;
+- capture quality/completeness.
+
+Do not collapse "where this copy came from" into "what this record is."
+
+LIGHTWEIGHT FIRST IMPLEMENTATION
+
+Keep the first Neocities publisher minimal.
+
+Prefer:
+- static export;
+- stable semantic IDs;
+- stable archive_id;
+- clean relative paths;
+- canonical data/presentation separation;
+- compact generated indexes where already needed.
+
+Avoid:
+- federation runtime;
+- peer crawling;
+- synchronization;
+- global CAS;
+- distributed consensus;
+- accounts;
+- server components;
+- custom search engine;
+- custom networking protocol;
+- compatibility scaffolding for obsolete beta layouts.
+
+TESTS
+
+Add tests proving at minimum:
+
+- semantic post IDs are identical regardless of Neocities hostname;
+- archive_id is stable across regeneration;
+- changing publication hostname does not change semantic record identity;
+- generated links remain valid under a different host/base path;
+- rendered HTML/CSS is not treated as canonical record identity;
+- two hypothetical replicas of the same Tumblr post can be recognized as the same logical record from their metadata;
+- a higher-quality hypothetical replica can be distinguished without changing logical identity;
+- publication remains fully static and file-oriented.
+
+If practical, include a fixture that publishes the same small archive under two different fake host roots and verifies identical semantic IDs with different replica locations.
+
+DO NOT
+
+- Do not add federation yet.
+- Do not add peer discovery yet.
+- Do not add remote crawling yet.
+- Do not add a backend/server requirement.
+- Do not make hostname part of identity.
+- Do not import remote presentation as data.
+- Do not build custom distributed infrastructure when an upstream static component can solve the generic problem.
+- Do not compromise local/offline readability.
+
+REPORT
+
+At completion report:
+
+1. Neocities output tree.
+2. How archive_id is stored and preserved.
+3. Exact semantic ID scheme.
+4. Which generated metadata is federation-ready.
+5. How data is separated from presentation.
+6. Whether any hostname/base-path assumptions remain.
+7. Tests and results.
+8. Explicitly list federation features deferred for later.
+
+Success means:
+
+The first Neocities implementation works perfectly well as a standalone static archive, but nothing about its identity, paths, data model, or presentation architecture assumes it will always be alone.

@@ -6,9 +6,9 @@ not exist in isolation: observed reblogs and interactions can preserve useful
 context if accounts disappear.
 
 This is early beta software intended to help preserve public Tumblr material
-during ongoing account loss. Expect rough edges. Keep the original Backups/
-directory; updates are designed to resume rather than replace preserved source
-records.
+during ongoing account loss. Expect rough edges. Archives are named data
+bundles; application source remains outside Archive/ and generated App/ output
+can be deleted and rebuilt.
 
 It does not need a Tumblr login, account, API key, or upload to a server.
 Only public Tumblr material is used. Neighborhood relationships are
@@ -80,18 +80,20 @@ enter the Tumblr blog name, for example:
 
 vigilanceos
 
-Your saved blogs are inside the Backups folder. The browser archive is
+Your saved blogs are inside the active named archive. The browser reader is
 available before, during, and after a crawl.
 
 Press Start crawl in the browser. The terminal remains available as a
-fallback, but normal use does not require terminal prompts. The archive is
-also available later at Backups/index.html. Reading does not require Python,
-Tumblr, or a localhost server.
+fallback, but normal use does not require terminal prompts. The generated
+reader is also available later at Archive/default/App/index.html (or the
+selected archive name). Reading does not require Python, Tumblr, or a
+localhost server.
 
 All launchers locate the project from their own file location. They do not
 require the terminal's current directory to be the extracted project folder.
 
-The application boundary and bridge contract are documented in ARCHITECTURE.md.
+Developer orientation is in `DEVELOPMENT.md`. Deeper architecture, release,
+known-issue, and third-party notes are in `docs/`.
 
 FIRST-RUN DEPENDENCIES
 
@@ -117,13 +119,17 @@ on distributions such as Arch Linux.
 
 DEVELOPMENT TESTING
 
+For contributors and power users, start with `DEVELOPMENT.md`. It maps the
+source tree, mutable archive data, generated files, compatibility wrappers,
+and the current refactor boundaries.
+
 From the repository root, run:
 
     python3 -m unittest discover -q
 
 The tests use temporary archive roots and do not require Tumblr network access.
 
-Release candidates use the immutable-artifact procedure in `RELEASE_GATE.md`.
+Release candidates use the immutable-artifact procedure in `docs/RELEASE_GATE.md`.
 It builds one ZIP, records its commit and SHA-256, tests that exact artifact
 on native CI runners, and keeps the Android/Pydroid gate separate from flaky
 browser UI handoff evidence.
@@ -161,7 +167,7 @@ SURROUNDING PUBLIC CONTEXT:
 - Explore saves bounded samples from public blogs observed around the target
   and follows those observations outward within the selected depth.
 - The target is the origin of the hunt; canonical archives are top-level
-  Backups/<blog>/ holdings.
+  Archive/<name>/Content/<blog>/ holdings.
 
 Context snapshots are samples, not complete backups of those blogs. The
 target blog remains the priority, and context work resumes incrementally on
@@ -194,9 +200,13 @@ downloaded again unnecessarily. If the program closes or the connection
 fails, run it again. Saved work remains on the device and unfinished saved
 posts are processed first.
 
-The global archive is stored at:
+Named archives are stored at:
 
-Tumblr-Scraper/Backups/
+Tumblr-Scraper/Archive/<name>/
+
+Each bundle contains Content/ and Network/ data plus disposable generated
+reader output in App/. Use `python3 tools/manage_archive.py list` to inspect
+bundles, and `create`, `save`, `load`, or `rename` to manage them.
 
 The launcher opens the global Blogs page. From there you can open individual
 blogs, the global Dashboard, and target-centered neighborhood views.

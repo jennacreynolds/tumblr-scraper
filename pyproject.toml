@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tumblr-scraper"
+version = "0.1.0.dev0"
+description = "A local Tumblr archiver with bounded neighborhood preservation"
+requires-python = ">=3.10"
+dependencies = [
+    "tumblr-backup==1.0.7",
+    "urllib3>=2.2.2,<2.6",
+]
+
+[project.scripts]
+tumblr-scraper = "tumblr_scraper.main:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

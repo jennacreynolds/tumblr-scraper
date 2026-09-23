@@ -4,6 +4,9 @@
 
 # Canonical/local Tumblr archives and personal backup data
 /Backups/
+/Archive/*
+/Backups (copy)/
+/Neighborhoods (copy)/
 /PuppetBackup/
 
 # Derived publishing output
@@ -60,6 +63,7 @@ neocities-credentials.json
 /run-state/
 /runtime-state/
 /Neighborhoods/
+/deprecated/graph-experiment/
 **/scout/
 **/*scout*.json
 **/*scout*.log

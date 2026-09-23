@@ -7,6 +7,11 @@ PROJECT_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" 2>/dev/null && pwd -P) || {
     exit 1
 }
 
+APPLICATION_ROOT="$PROJECT_ROOT"
+if [ -f "$PROJECT_ROOT/app/bootstrap.py" ]; then
+    APPLICATION_ROOT="$PROJECT_ROOT/app"
+fi
+
 cd "$PROJECT_ROOT" || {
     printf 'Tumblr Scraper: could not enter %s.\n' "$PROJECT_ROOT" >&2
     printf 'Press Enter to close this terminal. '
@@ -22,4 +27,4 @@ if ! command -v python3 >/dev/null 2>&1; then
     exit 1
 fi
 
-exec python3 "$PROJECT_ROOT/bootstrap.py" browser
+exec python3 "$APPLICATION_ROOT/bootstrap.py" browser

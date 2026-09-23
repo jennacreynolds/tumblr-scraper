@@ -13,6 +13,7 @@ import zipfile
 REQUIRED = {
     "bootstrap.py",
     "main.py",
+    "graph_projection.py",
     "Tumblr Scraper - Android.py",
     "Tumblr Scraper - Linux.desktop",
     "Tumblr Scraper - Windows.bat",
@@ -21,14 +22,18 @@ REQUIRED = {
     "tumblr-scraper",
     "assets/archive.js",
     "assets/archive.css",
+    "assets/graph-view.js",
+    "assets/graph-view.css",
+    "assets/vendor/cytoscape.min.js",
     "bridge/local_http.py",
     "network-policy.json",
     "context-policy.json",
-    "RELEASE_GATE.md",
+    "docs/RELEASE_GATE.md",
 }
 FORBIDDEN_PARTS = {
     "Backups",
     "Neighborhoods",
+    "Graph",
     ".git",
     ".runtime",
     "__pycache__",
@@ -58,6 +63,8 @@ def verify(zip_path: Path, manifest_path: Path | None = None, expected_commit: s
         names = archive.namelist()
         if not names:
             raise RuntimeError("ZIP is empty")
+        if len(names) != len(set(names)):
+            raise RuntimeError("ZIP contains duplicate entry names")
         top_levels = {name.split("/", 1)[0] for name in names if name}
         if len(top_levels) != 1:
             raise RuntimeError(f"ZIP must contain one top-level directory: {sorted(top_levels)}")
@@ -91,10 +98,15 @@ def verify(zip_path: Path, manifest_path: Path | None = None, expected_commit: s
     }
     if manifest_path:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if manifest.get("schema") != 1:
+            raise RuntimeError("Unsupported or missing release manifest schema")
         if manifest.get("artifact") != zip_path.name:
             raise RuntimeError("Manifest artifact name does not match ZIP")
         if manifest.get("sha256") != result["sha256"] or manifest.get("size") != result["size"]:
             raise RuntimeError("Manifest ZIP digest or size does not match")
+        commit = manifest.get("commit")
+        if not isinstance(commit, str) or len(commit) != 40 or any(character not in "0123456789abcdef" for character in commit):
+            raise RuntimeError("Manifest does not contain a full lowercase commit SHA")
         result["commit"] = manifest.get("commit")
     if expected_commit and result.get("commit") != expected_commit:
         raise RuntimeError("Release artifact was built from a different commit")

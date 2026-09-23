@@ -1,0 +1,11 @@
+Tumblr archive reliability probe
+
+PASS break-1 invalid archive name '../escape': archive name must be one non-empty path component
+PASS break-1 invalid archive name '/tmp/escape': archive name must be one non-empty path component
+PASS break-1 invalid archive name 'nested/name': archive name must be one non-empty path component
+PASS break-1 invalid archive name 'bad\x00name': archive name contains a path separator
+PASS break-2 corrupt active pointer: fell back to default
+PASS break-2 corrupt manifest: archive manifest is unreadable: safe
+PASS break-3 disposable App loss: data remained recoverable
+
+result=PASS failures=0

@@ -1,5 +1,20 @@
 {
   "version": 1,
+  "default_strategy": "neighborhood",
+  "capture_presets": {
+    "archive": {"max_breadth": 0, "max_depth": 300, "capture_shape": [{"breadth": 0.0, "depth": 1.0}, {"breadth": 1.0, "depth": 1.0}]},
+    "neighborhood": {"max_breadth": 1, "max_depth": 100, "capture_shape": [{"breadth": 0.0, "depth": 1.0}, {"breadth": 1.0, "depth": 0.5}]},
+    "explore": {"max_breadth": 3, "max_depth": 100, "capture_shape": [{"breadth": 0.0, "depth": 1.0}, {"breadth": 0.3333333333, "depth": 0.5}, {"breadth": 0.6666666667, "depth": 0.1}, {"breadth": 1.0, "depth": 0.01}]},
+    "survey": {"max_breadth": 6, "max_depth": 2, "capture_shape": [{"breadth": 0.0, "depth": 1.0}, {"breadth": 0.3333333333, "depth": 1.0}, {"breadth": 0.5, "depth": 0.5}, {"breadth": 1.0, "depth": 0.5}]}
+  },
+  "survey_preservation": "explore",
+  "survey_policy": {"max_observed_blogs": 10000, "max_requests": 10000, "max_distance": 6, "allow_after_post_budget": true},
+  "coverage_strategies": {
+    "archive": {"max_distance": 0, "capture_by_distance": [{"media_quality": "HIGH", "profile": true, "avatar": true, "public_likes": true, "public_following": true}], "survey": {"max_observed_blogs": 0, "max_requests": 0, "max_distance": 0, "allow_after_post_budget": false}},
+    "neighborhood": {"max_distance": 1, "capture_by_distance": [{"media_quality": "STANDARD", "profile": true, "avatar": true, "public_likes": true, "public_following": true}, {"media_quality": "COMPACT", "profile": true, "avatar": true}], "survey": {"max_observed_blogs": 100, "max_requests": 100, "max_distance": 1, "allow_after_post_budget": false}},
+    "explore": {"max_distance": 3, "capture_by_distance": [{"media_quality": "STANDARD", "profile": true, "avatar": true, "public_likes": true, "public_following": true}, {"media_quality": "COMPACT", "profile": true, "avatar": true}, {"media_quality": "THUMBNAIL", "profile": false, "avatar": false}], "survey": {"max_observed_blogs": 1000, "max_requests": 1000, "max_distance": 3, "allow_after_post_budget": true}},
+    "survey": {"max_distance": 6, "capture_by_distance": [{"media_quality": "STANDARD", "profile": true, "avatar": true}, {"media_quality": "COMPACT", "profile": true, "avatar": false}, {"media_quality": "THUMBNAIL", "profile": false, "avatar": false}, {"media_quality": "NONE", "profile": false, "avatar": false}], "survey": {"max_observed_blogs": 10000, "max_requests": 10000, "max_distance": 6, "allow_after_post_budget": true}}
+  },
   "scheduler": {
     "cycle_turns": 20
   },
@@ -7,11 +22,12 @@
     "max_neighbors_per_blog": 5,
     "initial_probe_posts": 10,
     "posts_per_context_blog": 50,
-    "global_context_blog_budget": 20,
     "global_context_post_budget": 500,
-    "default_explore_depth": 2,
+    "default_explore_depth": 3,
     "scout_initial_pages": 2,
     "scout_initial_records": 100,
+    "scout_gap_max_probes": 16,
+    "scout_gap_max_offset": 5000,
     "initial_neighborhood_posts": 5
   },
   "modes": {

@@ -7,6 +7,7 @@ know crawler policy, archive semantics, or platform behavior.
 from __future__ import annotations
 
 import json
+import os
 import secrets
 import sys
 import threading
@@ -46,12 +47,43 @@ class LocalControlRequestHandler(SimpleHTTPRequestHandler):
         return True
 
     def do_GET(self) -> None:
-        path = urlsplit(self.path).path
+        request = urlsplit(self.path)
+        path = request.path
+        if path in {"", "/"}:
+            self.send_response(302)
+            self.send_header("Location", "/" + self.server.interface_prefix.strip("/") + "/" + self.server.start_page)
+            self.end_headers()
+            return
+        interface_prefix = "/" + self.server.interface_prefix.strip("/") + "/"
+        if path.startswith(interface_prefix):
+            page_key = path[len(interface_prefix):]
+            # Query parameters are part of source-owned routes (for example,
+            # a selected local blog).  Keep them out of static-file routing,
+            # but pass them to the interface producer.
+            if request.query:
+                page_key += "?" + request.query
+            page = self.server.interface_provider(page_key)
+            if page is None:
+                self.send_error(404)
+            else:
+                body = page.encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            return
         if path == "/__crawler/bootstrap":
             if self._local_request_allowed():
                 self._json({
                     "live": True,
                     "capability": self.server.capability,
+                    "instance_id": self.server.instance_id,
+                    "owner": self.server.runtime_owner,
+                    "server_control": self.server.shutdown_handler is not None,
+                    "runtime_identity": self.server.identity_provider(),
+                    "archive_path": str(self.server.archive_root),
                     "status": self.server.status_provider(),
                 })
             return
@@ -63,6 +95,17 @@ class LocalControlRequestHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urlsplit(self.path).path
+        if path == "/__crawler/shutdown":
+            if not self._local_request_allowed(mutate=True):
+                return
+            if self.server.shutdown_handler is None:
+                self._json({"error": "server shutdown is unavailable"}, 409)
+                return
+            try:
+                self._json(self.server.shutdown_handler())
+            except Exception as exc:
+                self._json({"error": str(exc)}, 400)
+            return
         if path not in {"/__crawler/control", "/__crawler/start", "/__crawler/stop"}:
             self.send_error(404)
             return
@@ -98,14 +141,17 @@ class LocalControlRequestHandler(SimpleHTTPRequestHandler):
         request_path = unquote(urlsplit(path).path)
         translated = Path(super().translate_path(request_path)).resolve()
         archive_root = self.server.archive_root.resolve()
-        neighborhood_root = self.server.neighborhood_root.resolve()
+        network_root = self.server.network_root.resolve()
         global_css = self.server.global_css.resolve()
+        interface_root = self.server.interface_root.resolve()
         allowed = (
             translated == global_css
             or translated == archive_root
             or archive_root in translated.parents
-            or translated == neighborhood_root
-            or neighborhood_root in translated.parents
+            or translated == network_root
+            or network_root in translated.parents
+            or translated == interface_root
+            or interface_root in translated.parents
         )
         return str(translated) if allowed else str(self.server.base_dir / "__not_found__")
 
@@ -119,7 +165,7 @@ class LocalControlRequestHandler(SimpleHTTPRequestHandler):
         except (TypeError, ValueError):
             status = 0
         path = urlsplit(self.path).path
-        if status >= 400 and path not in {"/favicon.ico", "/Backups/favicon.ico"}:
+        if status >= 400 and path != "/favicon.ico":
             print(f"{status} {self.command} {path}", file=sys.stderr)
 
     def log_error(self, format: str, *args: object) -> None:
@@ -136,14 +182,21 @@ class LocalControlBridge:
         *,
         base_dir: Path,
         archive_root: Path,
-        neighborhood_root: Path,
+        network_root: Path,
         global_css: Path,
         status_provider: Callable[[], dict[str, Any]],
         control_handler: Callable[[str, Any], dict[str, Any]],
         start_handler: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
         stop_handler: Callable[[], dict[str, Any]] | None = None,
-        prepare_entrypoint: Callable[[], None] | None = None,
-        archive_url_prefix: str = "Backups",
+        interface_provider: Callable[[str], str | None],
+        interface_root: Path,
+        interface_prefix: str = "app",
+        archive_url_prefix: str = "Archive",
+        runtime_state_path: Path | None = None,
+        runtime_owner: str = "external",
+        runtime_session_id: str = "",
+        identity_provider: Callable[[], dict[str, Any]] | None = None,
+        shutdown_handler: Callable[[], dict[str, Any]] | None = None,
     ) -> None:
         self.base_dir = base_dir.resolve()
         self.capability = secrets.token_urlsafe(32)
@@ -151,24 +204,49 @@ class LocalControlBridge:
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
         self.server.base_dir = self.base_dir
         self.server.archive_root = archive_root
-        self.server.neighborhood_root = neighborhood_root
+        self.server.network_root = network_root
         self.server.global_css = global_css
+        self.server.interface_root = interface_root.resolve()
+        self.server.interface_provider = interface_provider
         self.server.status_provider = status_provider
         self.server.control_handler = control_handler
         self.server.start_handler = start_handler
         self.server.stop_handler = stop_handler
         self.server.capability = self.capability
+        self.server.shutdown_handler = shutdown_handler
+        self.server.instance_id = secrets.token_urlsafe(18)
+        self.server.runtime_state_path = runtime_state_path.resolve() if runtime_state_path else None
+        self.server.runtime_owner = runtime_owner
+        self.server.runtime_session_id = runtime_session_id
+        self.server.identity_provider = identity_provider or (lambda: {})
         self.archive_url_prefix = archive_url_prefix.strip("/")
-        self.prepare_entrypoint = prepare_entrypoint
+        self.server.archive_url_prefix = self.archive_url_prefix
+        self.interface_prefix = interface_prefix.strip("/")
+        self.server.interface_prefix = self.interface_prefix
+        self.server.start_page = "graph.html"
         self.thread = threading.Thread(target=self.server.serve_forever, name="archive-bridge", daemon=True)
 
     @property
     def url(self) -> str:
-        return f"http://127.0.0.1:{self.server.server_port}/{self.archive_url_prefix}/index.html"
+        return f"http://127.0.0.1:{self.server.server_port}/{self.interface_prefix}/{self.server.start_page}"
 
     def start(self) -> str:
-        if self.prepare_entrypoint is not None:
-            self.prepare_entrypoint()
+        if self.server.runtime_state_path is not None:
+            path = self.server.runtime_state_path
+            path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = path.with_name(path.name + ".tmp")
+            payload = {
+                "schema": 2,
+                "pid": os.getpid(),
+                "url": self.url,
+                "instance_id": self.server.instance_id,
+                "owner": self.server.runtime_owner,
+                "session_id": self.server.runtime_session_id,
+                "runtime_identity": self.server.identity_provider(),
+                "archive_path": str(self.server.archive_root),
+            }
+            temporary.write_text(json.dumps(payload, separators=(",", ":")) + "\n", encoding="utf-8")
+            temporary.replace(path)
         self.thread.start()
         return self.url
 
@@ -177,3 +255,11 @@ class LocalControlBridge:
         self.server.server_close()
         self.thread.join(timeout=2)
         self.server.capability = ""
+        path = self.server.runtime_state_path
+        if path is not None:
+            try:
+                current = json.loads(path.read_text(encoding="utf-8"))
+                if current.get("instance_id") == self.server.instance_id:
+                    path.unlink(missing_ok=True)
+            except (OSError, json.JSONDecodeError):
+                pass

@@ -17,30 +17,34 @@ import zipfile
 
 
 ROOT = Path(__file__).resolve().parents[1]
-FILES = (
+ROOT_FILES = (
     ".gitignore",
     "README.md",
     "README.txt",
-    "RELEASE_GATE.md",
-    "ARCHITECTURE.md",
-    "KNOWN_ISSUES.md",
-    "THIRD_PARTY.md",
-    "bootstrap.py",
-    "main.py",
-    "global.css",
-    "network-policy.json",
-    "context-policy.json",
-    "Tumblr Scraper - Android.py",
+    "README - START HERE.txt",
     "Tumblr Scraper - Linux.desktop",
     "Tumblr Scraper - Windows.bat",
     "Tumblr Scraper - macOS.command",
     "Tumblr-Scraper-Linux.sh",
-    "tumblr-scraper",
 )
-DIRECTORIES = ("assets", "bridge", "tests")
+APP_FILES = (
+    "bootstrap.py",
+    "main.py",
+    "Tumblr Scraper - Android.py",
+    "global.css",
+    "network-policy.json",
+    "context-policy.json",
+)
+DOCUMENT_FILES = (
+    "docs/RELEASE_GATE.md",
+    "docs/ARCHITECTURE.md",
+    "docs/KNOWN_ISSUES.md",
+    "docs/THIRD_PARTY.md",
+)
 FORBIDDEN_PARTS = {
     "Backups",
     "Neighborhoods",
+    "Graph",
     ".git",
     ".runtime",
     "__pycache__",
@@ -67,21 +71,52 @@ def worktree_is_dirty() -> bool:
     return bool(result.stdout.strip())
 
 
+def _copy_file(relative: str, destination: Path) -> None:
+    source = ROOT / relative
+    if not source.is_file():
+        raise RuntimeError(f"Missing allowlisted file: {relative}")
+    target = destination / relative
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, target)
+
+
+def _copy_named(source_relative: str, destination: Path, destination_name: str) -> None:
+    source = ROOT / source_relative
+    if not source.is_file():
+        raise RuntimeError(f"Missing allowlisted file: {source_relative}")
+    destination.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, destination / destination_name)
+
+
 def copy_allowlist(destination: Path) -> None:
-    for relative in FILES:
-        source = ROOT / relative
-        if not source.is_file():
-            raise RuntimeError(f"Missing allowlisted file: {relative}")
-        target = destination / relative
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, target)
+    for relative in ROOT_FILES:
+        _copy_file(relative, destination)
+    _copy_named("Tumblr Scraper - Windows.bat", destination, "Start Tumblr Scraper - Windows.bat")
+    _copy_named("Tumblr Scraper - macOS.command", destination, "Start Tumblr Scraper - macOS.command")
+    _copy_named("Tumblr Scraper - Linux.desktop", destination, "Start Tumblr Scraper - Linux.desktop")
+    _copy_named("Tumblr-Scraper-Linux.sh", destination, "Start Tumblr Scraper - Linux.sh")
+    for relative in DOCUMENT_FILES:
+        _copy_file(relative, destination)
+    for relative in APP_FILES:
+        _copy_file(relative, destination / "app")
 
     ignored = shutil.ignore_patterns("__pycache__", "*.pyc", ".pytest_cache", ".mypy_cache")
-    for relative in DIRECTORIES:
+    for relative in ("assets", "bridge"):
         source = ROOT / relative
         if not source.is_dir():
             raise RuntimeError(f"Missing allowlisted directory: {relative}")
-        shutil.copytree(source, destination / relative, ignore=ignored)
+        shutil.copytree(source, destination / "app" / relative, ignore=ignored)
+
+    package_source = ROOT / "src" / "tumblr_scraper"
+    if not package_source.is_dir():
+        raise RuntimeError("Missing allowlisted directory: src/tumblr_scraper")
+    shutil.copytree(package_source, destination / "app" / "tumblr_scraper", ignore=ignored)
+
+    cli_source = ROOT / "tumblr-scraper"
+    if cli_source.is_file():
+        launcher_destination = destination / "launchers"
+        launcher_destination.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(cli_source, launcher_destination / "tumblr-scraper")
 
 
 def iter_files(root: Path):
@@ -136,9 +171,20 @@ def main() -> int:
         parser.error("--artifact-name must be one ZIP filename")
     if worktree_is_dirty() and not args.allow_dirty:
         raise RuntimeError("Release artifact requires a clean worktree; commit changes before building")
-    commit = args.commit or git_commit()
+    commit = git_commit()
+    if args.commit and args.commit != commit:
+        raise RuntimeError(
+            f"Requested commit {args.commit} is not the checked-out commit {commit}; "
+            "build from the exact release-candidate checkout"
+        )
     args.output_dir.mkdir(parents=True, exist_ok=True)
     output = args.output_dir / args.artifact_name
+    manifest_path = args.output_dir / "release-manifest.json"
+    if output.exists() or manifest_path.exists():
+        raise RuntimeError(
+            f"Refusing to replace an existing candidate in {args.output_dir}; "
+            "use a new output directory or artifact name"
+        )
     top_level = output.stem
 
     with tempfile.TemporaryDirectory(prefix="tumblr-release-stage ") as temporary:
@@ -154,9 +200,14 @@ def main() -> int:
         "sha256": sha256(output),
         "size": output.stat().st_size,
         "built_at_utc": datetime.now(timezone.utc).isoformat(),
-        "allowlist": {"files": list(FILES), "directories": list(DIRECTORIES)},
+        "allowlist": {
+            "root_files": list(ROOT_FILES),
+            "app_files": list(APP_FILES),
+            "documentation": list(DOCUMENT_FILES),
+            "directories": ["app/assets", "app/bridge", "app/tumblr_scraper", "launchers"],
+        },
     }
-    (args.output_dir / "release-manifest.json").write_text(
+    manifest_path.write_text(
         json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
     )
     print(json.dumps(manifest, indent=2))

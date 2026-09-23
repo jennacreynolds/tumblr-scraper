@@ -4,9 +4,11 @@
 import sys
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parent
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+LAUNCHER_ROOT = Path(__file__).resolve().parent
+PROJECT_ROOT = LAUNCHER_ROOT.parent if LAUNCHER_ROOT.name == "launchers" else LAUNCHER_ROOT
+APPLICATION_ROOT = PROJECT_ROOT / "app" if (PROJECT_ROOT / "app" / "bootstrap.py").is_file() else PROJECT_ROOT
+if str(APPLICATION_ROOT) not in sys.path:
+    sys.path.insert(0, str(APPLICATION_ROOT))
 
 import bootstrap
 

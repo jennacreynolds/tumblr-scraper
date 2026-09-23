@@ -14,12 +14,13 @@ import sys
 from typing import Sequence
 
 
-PROJECT_ROOT = Path(__file__).resolve().parent
+APPLICATION_ROOT = Path(__file__).resolve().parent
+PROJECT_ROOT = APPLICATION_ROOT.parent if APPLICATION_ROOT.name == "app" else APPLICATION_ROOT
 RUNTIME_ROOT = PROJECT_ROOT / ".runtime"
 VENV_ROOT = RUNTIME_ROOT / "venv"
 STAMP_PATH = RUNTIME_ROOT / "bootstrap-state.json"
-MAIN_PATH = PROJECT_ROOT / "main.py"
-BROWSER_HOST_PATH = PROJECT_ROOT / "Tumblr Scraper - Android.py"
+MAIN_PATH = APPLICATION_ROOT / "main.py"
+BROWSER_HOST_PATH = APPLICATION_ROOT / "Tumblr Scraper - Android.py"
 BOOTSTRAP_SCHEMA = 1
 BOOTSTRAP_ACTIVE = "TUMBLR_BOOTSTRAP_ACTIVE"
 DEPENDENCY_SPECS = (
@@ -154,7 +155,7 @@ def _install_dependencies(project_root: Path, runtime: Path) -> None:
         )
 
     command = [str(runtime), "-m", "pip", "install", "--disable-pip-version-check"]
-    wheels_path = project_root / "wheels"
+    wheels_path = APPLICATION_ROOT / "wheels"
     if wheels_path.is_dir() and any(wheels_path.iterdir()):
         command.extend(["--no-index", "--find-links", str(wheels_path)])
     command.extend(DEPENDENCY_SPECS)
@@ -205,7 +206,7 @@ def ensure_pydroid_runtime(project_root: Path = PROJECT_ROOT) -> Path:
     if _versions_satisfy():
         return Path(sys.executable)
     command = [sys.executable, "-m", "pip", "install", "--disable-pip-version-check", *DEPENDENCY_SPECS]
-    wheels_path = project_root / "wheels"
+    wheels_path = APPLICATION_ROOT / "wheels"
     if wheels_path.is_dir() and any(wheels_path.iterdir()):
         command[3:3] = ["--no-index", "--find-links", str(wheels_path)]
     result = subprocess.run(command, cwd=str(project_root), check=False)
